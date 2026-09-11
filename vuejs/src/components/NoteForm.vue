@@ -36,13 +36,16 @@ async function onSubmit() {
 
 <template>
   <div>
-    <form class="flex gap-2" @submit.prevent="onSubmit">
+    <form
+      class="flex gap-2"
+      @submit.prevent="onSubmit"
+    >
       <input
         v-model="noteText"
         type="text"
         placeholder="Add a note…"
         class="flex-1 rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      >
       <button
         type="submit"
         :disabled="loading || !noteText.trim()"
@@ -51,6 +54,11 @@ async function onSubmit() {
         {{ loading ? 'Saving…' : 'Add note' }}
       </button>
     </form>
-    <p v-if="error" class="mt-2 text-sm text-red-600">{{ error.message }}</p>
+    <p
+      v-if="error"
+      class="mt-2 text-sm text-red-600"
+    >
+      {{ error.message }}
+    </p>
   </div>
 </template>
