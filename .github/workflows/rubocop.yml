@@ -1,0 +1,53 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+# pulled from repo
+name: "Rubocop"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: ["main"]
+
+jobs:
+  rubocop:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # If running on a self-hosted runner, check it meets the requirements
+      # listed at https://github.com/ruby/setup-ruby#using-self-hosted-runners
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.4.10
+          bundler-cache: true
+          working-directory: ruby
+
+      - name: Rubocop run
+        working-directory: ruby
+        run: |
+          set +e
+          bundle exec rubocop --require code_scanning --format CodeScanning::SarifFormatter -o rubocop.sarif
+          rubocop_exit=$?
+          set -e
+          # Exit 1 means rubocop ran fine and just found offenses, which is
+          # reported via the SARIF upload below, not a failed job. Only a
+          # crash (anything else) should fail the step outright.
+          [[ $rubocop_exit -eq 0 || $rubocop_exit -eq 1 ]]
+
+      - name: Upload Sarif output
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ruby/rubocop.sarif

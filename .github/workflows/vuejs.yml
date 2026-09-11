@@ -1,0 +1,79 @@
+name: Vue client
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Vitest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.2
+          cache: npm
+          cache-dependency-path: vuejs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vuejs
+        run: npm ci
+
+      - name: Run tests
+        working-directory: vuejs
+        run: npm test
+
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.2
+          cache: npm
+          cache-dependency-path: vuejs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vuejs
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: vuejs
+        run: npm run lint
+
+  typecheck:
+    name: vue-tsc
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.2
+          cache: npm
+          cache-dependency-path: vuejs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: vuejs
+        run: npm ci
+
+      # src/gql/ (graphql-codegen's typed operations) is committed source, not
+      # regenerated here, so this needs no live GraphQL schema or server.
+      - name: Type-check
+        working-directory: vuejs
+        run: npx vue-tsc -b

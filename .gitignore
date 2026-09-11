@@ -1,0 +1,27 @@
+# --- Node / npm (vuejs/) ---
+node_modules/
+vuejs/dist/
+npm-debug.log*
+*.tsbuildinfo
+
+# Vite personal env overrides (vuejs/.env.development and .env.test are
+# intentionally committed defaults consumed by docker/postgres/init-databases.sh
+# and the app's own dotenv loading — do not ignore those).
+.env.local
+.env.*.local
+
+# --- Ruby ---
+# Ruby LSP's generated local cache/bundle (it ships its own nested
+# .gitignore too, but this makes the exclusion visible from the root).
+ruby/.ruby-lsp/
+# Only relevant if someone runs `bundle config set --local path vendor/bundle`
+# (sorbet/config already anticipates this path).
+ruby/vendor/bundle/
+ruby/log/
+ruby/tmp/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

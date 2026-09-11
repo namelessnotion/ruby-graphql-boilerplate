@@ -1,0 +1,114 @@
+# frozen_string_literal: true
+
+require 'dotenv'
+require 'sequel'
+require 'uri'
+
+# Provisions the Postgres role and database for one app environment, reading
+# connection details from that environment's .env file so the dotenv files
+# stay the single source of truth (matching docker/postgres/init-databases.sh,
+# which provisions the same roles/databases on a fresh container).
+module DatabaseInit
+  module_function
+
+  def init!(environment)
+    creds = credentials(environment)
+    admin = admin_connection(creds[:host], creds[:port])
+    provision(admin, creds)
+    puts "#{environment} database ready (#{creds[:database]})"
+  end
+
+  def provision(admin, creds)
+    ensure_role(admin, creds[:user], creds[:password])
+    ensure_database(admin, creds[:database], creds[:user])
+  ensure
+    admin.disconnect
+  end
+
+  def credentials(environment)
+    uri = URI.parse(database_url(environment))
+    { host: uri.host, port: uri.port, user: decode(uri.user), password: decode(uri.password),
+      database: uri.path.delete_prefix('/') }
+  end
+
+  def database_url(environment)
+    env_file = File.expand_path(".env.#{environment}", __dir__)
+    abort "missing #{File.basename(env_file)}" unless File.exist?(env_file)
+
+    Dotenv.parse(env_file).fetch('DATABASE_URL')
+  end
+
+  def decode(value)
+    URI.decode_www_form_component(value.to_s)
+  end
+
+  def admin_connection(host, port)
+    admin_user = ENV.fetch('POSTGRES_ADMIN_USER', 'postgres')
+    admin_password = ENV.fetch('POSTGRES_ADMIN_PASSWORD', 'postgres')
+    Sequel.connect("postgres://#{admin_user}:#{admin_password}@#{host}:#{port}/postgres")
+  end
+
+  def quote_ident(name)
+    %("#{name.gsub('"', '""')}")
+  end
+
+  def ensure_role(db, user, password)
+    return if db.fetch('SELECT 1 FROM pg_roles WHERE rolname = ?', user).any?
+
+    db.run("CREATE ROLE #{quote_ident(user)} WITH LOGIN PASSWORD #{db.literal(password)}")
+    puts "created role #{user}"
+  end
+
+  def ensure_database(db, name, owner)
+    return if db.fetch('SELECT 1 FROM pg_database WHERE datname = ?', name).any?
+
+    db.run("CREATE DATABASE #{quote_ident(name)} OWNER #{quote_ident(owner)}")
+    puts "created database #{name}"
+  end
+end
+
+namespace :graphql do
+  namespace :schema do
+    desc 'Dump the GraphQL schema definition to app/graphql/schemas/app_schema.graphql'
+    task :dump do
+      require_relative 'lib/environment'
+
+      path = File.expand_path('app/graphql/schemas/app_schema.graphql', __dir__)
+      File.write(path, "#{AppSchema.to_definition.strip}\n")
+
+      puts "wrote #{File.join('app/graphql/schemas', File.basename(path))}"
+    end
+  end
+end
+
+namespace :db do
+  desc 'Create the role and database for ENVIRONMENT (defaults to APP_ENV) from its .env file, ' \
+       'e.g. rake db:init or rake db:init[test]'
+  task :init, [:environment] do |_t, args|
+    environment = args[:environment] || ENV['APP_ENV'] || 'development'
+    DatabaseInit.init!(environment)
+  end
+
+  desc 'Create a new migration file, e.g. rake db:new_migration[create_accounts]'
+  task :new_migration, [:name] do |_t, args|
+    name = args[:name]
+    abort 'usage: rake db:new_migration[migration_name]' if name.nil? || name.empty?
+
+    migrations_dir = File.expand_path('db/migrations', __dir__)
+    timestamp = Time.now.utc.strftime('%Y%m%d%H%M%S')
+    filename = "#{timestamp}_#{name}.rb"
+    path = File.join(migrations_dir, filename)
+
+    File.write(path, <<~RUBY)
+      # frozen_string_literal: true
+      # typed: ignore
+
+      Sequel.migration do
+        change do
+        end
+      end
+    RUBY
+
+    puts "created #{File.join('db/migrations', filename)}"
+  end
+end
