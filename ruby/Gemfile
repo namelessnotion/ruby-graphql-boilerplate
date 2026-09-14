@@ -10,6 +10,8 @@ gem 'pg'
 gem 'rack'
 gem 'rackup'
 gem 'rake'
+gem 'redis'
+gem 'resque'
 gem 'sequel'
 gem 'sorbet-runtime'
 

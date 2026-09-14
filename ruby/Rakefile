@@ -3,6 +3,11 @@
 require 'dotenv'
 require 'sequel'
 require 'uri'
+require 'resque/tasks'
+
+task :environment do
+  require_relative 'lib/environment'
+end
 
 # Provisions the Postgres role and database for one app environment, reading
 # connection details from that environment's .env file so the dotenv files
@@ -110,5 +115,15 @@ namespace :db do
     RUBY
 
     puts "created #{File.join('db/migrations', filename)}"
+  end
+end
+
+namespace :resque do
+  task setup: :environment
+
+  desc 'Enqueue Jobs::IncrementCounterJob once, to check a worker can reach Redis'
+  task test_enqueue: :environment do
+    Resque.enqueue(Jobs::IncrementCounterJob)
+    puts "enqueued Jobs::IncrementCounterJob (key: #{Jobs::IncrementCounterJob::KEY})"
   end
 end

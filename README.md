@@ -77,3 +77,58 @@ before restarting Vite:
 cd ruby && bundle exec rake graphql:schema:dump
 cd ../vuejs && npm run generate
 ```
+
+## Background jobs (Resque)
+
+Background jobs run via [Resque](https://github.com/resque/resque), backed by
+Redis. Connection details live in `ruby/.env.development` and
+`ruby/.env.test` as `REDIS_URL` (each environment uses a different Redis
+database index so they don't share state).
+
+1. Start Redis:
+
+   ```sh
+   docker compose up -d redis
+   ```
+
+2. Start a worker (in its own terminal), listening on every queue:
+
+   ```sh
+   cd ruby
+   QUEUE=* bundle exec rake resque:work
+   ```
+
+To check a worker can actually reach Redis and process a job, enqueue the
+built-in smoke-test job (`Jobs::IncrementCounterJob`, in
+`ruby/app/jobs/increment_counter_job.rb`), which just increments a counter
+key:
+
+```sh
+cd ruby
+bundle exec rake resque:test_enqueue
+```
+
+With a worker running, it'll pick the job up and increment `test_counter`
+(stored as `resque:test_counter`, since Resque namespaces all of its own keys
+under `resque:`). Confirm it worked:
+
+```sh
+docker compose exec redis redis-cli -n 0 get resque:test_counter
+```
+
+(use `-n 1` instead if you're checking against the test environment's Redis
+database).
+
+## Doctor
+
+Once you've started the pieces above, check they're all actually up:
+
+```sh
+bin/doctor
+```
+
+It checks Postgres, Redis, the Ruby API, a Resque worker, and the Vite/Vue
+client, reading connection details from `ruby/.env.development`. Override
+`API_URL` / `VITE_URL` if you've bound those somewhere other than this
+README's defaults (`http://localhost:3000` and `http://localhost:5173`).
+Exits non-zero if anything's down.
