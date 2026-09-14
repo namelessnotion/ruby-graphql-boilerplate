@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# Checks whether the local dev stack (Postgres, Redis, the Ruby API, a
+# Resque worker, and the Vite/Vue client) is up and reachable.
+#
+# Connection details for Postgres/Redis are read from ruby/.env.development
+# (the same source of truth used by `rake db:init` and the Postgres init
+# script), so this stays correct if those ever change. The API and Vite URLs
+# aren't stored in any .env file — override them with API_URL / VITE_URL if
+# you've bound them somewhere other than the README's documented defaults.
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$ROOT_DIR/ruby/.env.development"
+
+API_URL="${API_URL:-http://localhost:3000}"
+VITE_URL="${VITE_URL:-http://localhost:5173}"
+
+pass=0
+fail=0
+
+ok() {
+  printf '  \033[32m✓\033[0m %s\n' "$1"
+  pass=$((pass + 1))
+}
+
+bad() {
+  printf '  \033[31m✗\033[0m %s\n' "$1"
+  fail=$((fail + 1))
+}
+
+env_value() {
+  # $1: KEY, $2: file. Last match wins, matching how dotenv loads files.
+  grep -E "^$1=" "$2" 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
+# Splits a postgres://user:pass@host:port/db or redis://host:port/index URL
+# into HOST, PORT, and DB_INDEX (redis only; empty for postgres) globals.
+parse_url() {
+  local url="$1"
+  local rest="${url#*://}"
+  rest="${rest#*@}"
+  local hostport="${rest%%/*}"
+  local path="${rest#*/}"
+  HOST="${hostport%%:*}"
+  PORT="${hostport##*:}"
+  DB_INDEX="${path%%\?*}"
+}
+
+tcp_open() {
+  (exec 3<>"/dev/tcp/$1/$2") 2>/dev/null
+}
+
+echo "Postgres"
+db_url="$(env_value DATABASE_URL "$ENV_FILE")"
+if [ -z "$db_url" ]; then
+  bad "DATABASE_URL not found in ruby/.env.development"
+else
+  parse_url "$db_url"
+  # TCP reachability is the authoritative signal: pg_isready sometimes
+  # resolves to a broken shim (e.g. an unconfigured mise/asdf version) that
+  # errors out for reasons unrelated to whether Postgres itself is up, so a
+  # failure there only downgrades the message, it never overrides a real
+  # open port into a false failure.
+  if tcp_open "$HOST" "$PORT"; then
+    if command -v pg_isready >/dev/null 2>&1 && pg_isready -h "$HOST" -p "$PORT" -q >/dev/null 2>&1; then
+      ok "reachable at $HOST:$PORT"
+    else
+      ok "port open at $HOST:$PORT"
+    fi
+  else
+    bad "not reachable at $HOST:$PORT"
+  fi
+fi
+
+echo "Redis"
+redis_url="$(env_value REDIS_URL "$ENV_FILE")"
+redis_host=""
+redis_port=""
+redis_db=""
+if [ -z "$redis_url" ]; then
+  bad "REDIS_URL not found in ruby/.env.development"
+else
+  parse_url "$redis_url"
+  redis_host="$HOST"
+  redis_port="$PORT"
+  redis_db="${DB_INDEX:-0}"
+  if tcp_open "$HOST" "$PORT"; then
+    if command -v redis-cli >/dev/null 2>&1 && [ "$(redis-cli -h "$HOST" -p "$PORT" ping 2>/dev/null)" = "PONG" ]; then
+      ok "reachable at $HOST:$PORT"
+    else
+      ok "port open at $HOST:$PORT"
+    fi
+  else
+    bad "not reachable at $HOST:$PORT"
+  fi
+fi
+
+echo "Ruby API"
+if ! command -v curl >/dev/null 2>&1; then
+  bad "curl not available to check $API_URL/healthz"
+elif curl -fsS "$API_URL/healthz" 2>/dev/null | grep -q '"status":"ok"'; then
+  ok "healthy at $API_URL/healthz"
+else
+  bad "not responding at $API_URL/healthz"
+fi
+
+echo "Resque worker"
+if [ -z "$redis_host" ]; then
+  bad "can't check without a working REDIS_URL"
+elif ! command -v redis-cli >/dev/null 2>&1; then
+  bad "redis-cli not available to check the resque:workers registry"
+else
+  worker_count="$(redis-cli -h "$redis_host" -p "$redis_port" -n "$redis_db" scard resque:workers 2>/dev/null)"
+  case "$worker_count" in
+    '' | *[!0-9]*)
+      # redis-cli ran but gave no usable number back — commonly a broken
+      # shim (see the Postgres/Redis checks above), not "zero workers".
+      bad "couldn't query resque:workers via redis-cli — is redis-cli itself working? try: redis-cli -h $redis_host -p $redis_port ping"
+      ;;
+    0)
+      bad "no workers registered in redis:workers (db $redis_db) — start one with: cd ruby && QUEUE=* bundle exec rake resque:work"
+      ;;
+    *)
+      ok "$worker_count worker(s) registered (db $redis_db)"
+      ;;
+  esac
+fi
+
+echo "Vite / Vue client"
+if ! command -v curl >/dev/null 2>&1; then
+  bad "curl not available to check $VITE_URL"
+elif curl -fsS -o /dev/null "$VITE_URL" 2>/dev/null; then
+  ok "responding at $VITE_URL"
+else
+  bad "not responding at $VITE_URL"
+fi
+
+echo
+echo "$pass passed, $fail failed"
+[ "$fail" -eq 0 ]
