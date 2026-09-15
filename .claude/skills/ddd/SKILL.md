@@ -1,8 +1,9 @@
+---
+name: ddd
+description: Domain-Driven Design patterns (Eric Evans) — Bounded Contexts, Ubiquitous Language, Aggregates/Entities/Value Objects/Repositories, context mapping. Use when modeling business/domain logic, naming or renaming domain concepts, resolving ambiguous or inconsistent terminology, designing Entities/Value Objects/Aggregates/Repositories/Factories, defining or crossing Bounded Context boundaries, or distilling the Core Domain from supporting/generic subdomains.
+---
+
 # OBEY Domain-Driven Design by Eric Evans
-
-## When to use
-
-Use when business complexity, model language, lifecycle rules, or cross-team/system boundaries shape the design more than generic technical organization.
 
 ## Primary bias to correct
 

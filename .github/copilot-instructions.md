@@ -4,15 +4,19 @@ This repository is a boilerplate for a Ruby GraphQL API and a Vue client. Keep
 the applications independent: Ruby code and its tooling live in `ruby/`; Vue
 code and its tooling live in `vuejs/`.
 
+## Design guidance
+
+Domain-modeling and general engineering-process judgment calls are covered by
+the `ddd` and `pragmatic` skills (invoked automatically when relevant).
+
 ## Non-negotiable quality gates
 
 - Use test-driven development: write or update a failing test before implementing
   a behavior change, then make it pass and refactor only while the full relevant
   test set remains green.
-- Never bypass, disable, exclude, or weaken a linter, test, or type checker.
-  Do not use suppression flags, inline disables, `--no-verify`, `skipLibCheck`,
-  `# typed: ignore`, `T.unsafe`, or broad type assertions to avoid fixing an
-  underlying problem.
+- Never weaken a linter, test, or type checker. Do not use suppression flags,
+  inline disables, `--no-verify`, `skipLibCheck`, `# typed: ignore`,
+  `T.unsafe`, or broad type assertions to avoid fixing an underlying problem.
 - Add regression coverage for every bug fix and focused tests for every new
   behavior. Test public behavior, error cases, and important boundaries.
 - Run the smallest relevant checks after a change, then run all required checks
@@ -20,8 +24,9 @@ code and its tooling live in `vuejs/`.
 
 ## Ruby API (`ruby/`)
 
-- Use Ruby 3.4, Falcon, Rack, GraphQL-Ruby, Sequel, PostgreSQL, Sorbet, RSpec,
-  Factory Bot, and RuboCop.
+- Use Ruby 3.4, Falcon (not Puma/Unicorn), GraphQL-Ruby, Sequel (not
+  ActiveRecord), and Sorbet for static types; see `Gemfile` for the current
+  full toolchain.
 - Preserve `# typed: strict` in application files. Define explicit Sorbet
   signatures and model domain types rather than relying on untyped hashes or
   implicit nilability.
@@ -30,10 +35,12 @@ code and its tooling live in `vuejs/`.
   errors deliberately rather than leaking database exceptions.
 - Use RSpec for unit, request/schema, and integration coverage as appropriate.
   Use Factory Bot to create test data rather than manually duplicating fixtures.
-- The app needs a live migrated PostgreSQL database when eager-loading models;
-  use `docker compose up -d db` when database-backed tests or development need
-  it. Use `APP_ENV=test`; boot loads `.env.test`, which supplies `DATABASE_URL`
-  for test connections.
+- The app needs a live migrated PostgreSQL database when eager-loading models.
+  When database-backed tests or development need it: `docker compose up -d db`,
+  then `bundle exec rake "db:init[env]"` (creates the role/database) and
+  `APP_ENV=env bin/migrate up` (runs pending migrations) — both are one-time
+  per fresh database, not per session. Use `APP_ENV=test`; boot loads
+  `.env.test`, which supplies `DATABASE_URL` for test connections.
 - Required checks for Ruby changes:
 
   ```sh
@@ -69,8 +76,13 @@ code and its tooling live in `vuejs/`.
 
 ## Shared integration
 
-- Treat the GraphQL schema as a contract. When API schema behavior changes,
-  update the Vue operation/composable and tests in the same change.
+- Treat the GraphQL schema as a contract. When Ruby schema behavior changes:
+  run `bundle exec rake graphql:schema:dump` in `ruby/` (regenerates
+  `app/graphql/schemas/app_schema.graphql`), then `npm run generate` in
+  `vuejs/` (regenerates `src/gql/*` from that file), and update the Vue
+  operation/composable and tests in the same change. Both generated files are
+  committed, so a schema change without both steps leaves stale generated
+  code in the repo.
 - Keep environment-specific connection URLs and secrets outside committed source.
   Document required variable names in an example environment file when one is
   introduced.

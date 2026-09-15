@@ -1,8 +1,9 @@
+---
+name: pragmatic
+description: The Pragmatic Programmer engineering practices (Hunt & Thomas) — DRY, orthogonality, reversible decisions, tracer bullets, contracts, broken windows. Use for general architecture/design tradeoff calls, reducing duplicated knowledge or coupling across the codebase, deciding between a quick fix and a deeper fix, choosing what to automate, defining error-handling/contract boundaries, or any engineering-process judgment call not covered by a more specific rule.
+---
+
 # OBEY The Pragmatic Programmer by Andrew Hunt and David Thomas
-
-## When to use
-
-Use as a general engineering operating style when the goal is accountable delivery, adaptability, fast feedback, and code that remains easy to change.
 
 ## Primary bias to correct
 

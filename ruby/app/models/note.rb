@@ -4,7 +4,6 @@
 # Model of persisted notes
 class Note < Sequel::Model
   plugin :state_machine
-  extend T::Sig
 
   one_to_many :audit_logs
 
