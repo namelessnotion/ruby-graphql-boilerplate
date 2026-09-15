@@ -11,7 +11,7 @@ module Environment
 
   # Ordering is cosmetic — every file require_relatives its own dependencies — but
   # keeping models ahead of their consumers matches how the app is layered.
-  LAYERS = T.let(%w[types models services jobs graphql].freeze, T::Array[String])
+  LAYERS = T.let(%w[types models services jobs graphql api].freeze, T::Array[String])
 
   sig { void }
   def self.load_app!

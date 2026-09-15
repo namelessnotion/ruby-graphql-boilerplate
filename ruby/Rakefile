@@ -1,74 +1,221 @@
 # frozen_string_literal: true
 
+require 'csv'
 require 'dotenv'
+require 'fileutils'
+require 'open3'
 require 'sequel'
 require 'uri'
 require 'resque/tasks'
+require_relative 'lib/memory_snapshot'
 
 task :environment do
   require_relative 'lib/environment'
 end
 
-# Provisions the Postgres role and database for one app environment, reading
-# connection details from that environment's .env file so the dotenv files
-# stay the single source of truth (matching docker/postgres/init-databases.sh,
-# which provisions the same roles/databases on a fresh container).
-module DatabaseInit
-  module_function
+# Namespaces the Rakefile's helper modules so only one constant is defined
+# at the top level (RuboCop's Style/OneClassPerFile).
+module RakeSupport
+  # Provisions the Postgres role and database for one app environment,
+  # reading connection details from that environment's .env file so the
+  # dotenv files stay the single source of truth (matching
+  # docker/postgres/init-databases.sh, which provisions the same
+  # roles/databases on a fresh container).
+  module DatabaseInit
+    module_function
 
-  def init!(environment)
-    creds = credentials(environment)
-    admin = admin_connection(creds[:host], creds[:port])
-    provision(admin, creds)
-    puts "#{environment} database ready (#{creds[:database]})"
+    def init!(environment)
+      creds = credentials(environment)
+      admin = admin_connection(creds[:host], creds[:port])
+      provision(admin, creds)
+      puts "#{environment} database ready (#{creds[:database]})"
+    end
+
+    def provision(admin, creds)
+      ensure_role(admin, creds[:user], creds[:password])
+      ensure_database(admin, creds[:database], creds[:user])
+    ensure
+      admin.disconnect
+    end
+
+    def credentials(environment)
+      uri = URI.parse(database_url(environment))
+      { host: uri.host, port: uri.port, user: decode(uri.user), password: decode(uri.password),
+        database: uri.path.delete_prefix('/') }
+    end
+
+    def database_url(environment)
+      env_file = File.expand_path(".env.#{environment}", __dir__)
+      abort "missing #{File.basename(env_file)}" unless File.exist?(env_file)
+
+      Dotenv.parse(env_file).fetch('DATABASE_URL')
+    end
+
+    def decode(value)
+      URI.decode_www_form_component(value.to_s)
+    end
+
+    def admin_connection(host, port)
+      admin_user = ENV.fetch('POSTGRES_ADMIN_USER', 'postgres')
+      admin_password = ENV.fetch('POSTGRES_ADMIN_PASSWORD', 'postgres')
+      Sequel.connect("postgres://#{admin_user}:#{admin_password}@#{host}:#{port}/postgres")
+    end
+
+    def quote_ident(name)
+      %("#{name.gsub('"', '""')}")
+    end
+
+    def ensure_role(db, user, password)
+      return if db.fetch('SELECT 1 FROM pg_roles WHERE rolname = ?', user).any?
+
+      db.run("CREATE ROLE #{quote_ident(user)} WITH LOGIN PASSWORD #{db.literal(password)}")
+      puts "created role #{user}"
+    end
+
+    def ensure_database(db, name, owner)
+      return if db.fetch('SELECT 1 FROM pg_database WHERE datname = ?', name).any?
+
+      db.run("CREATE DATABASE #{quote_ident(name)} OWNER #{quote_ident(owner)}")
+      puts "created database #{name}"
+    end
   end
 
-  def provision(admin, creds)
-    ensure_role(admin, creds[:user], creds[:password])
-    ensure_database(admin, creds[:database], creds[:user])
-  ensure
-    admin.disconnect
+  # Shells out to a bin/memory_* script in an isolated subprocess — so each
+  # reading reflects that script's own footprint, not the measuring
+  # process's — and parses its bare-number stdout. Shared by the individual
+  # `memory:rss:*`/`memory:profile:*` print tasks and by MemoryReportRunner.
+  module MemoryProbe
+    module_function
+
+    def run_float(*cmd)
+      stdout, status = Open3.capture2('bundle', 'exec', *cmd, chdir: __dir__)
+      abort "#{cmd.join(' ')} failed:\n#{stdout}" unless status.success?
+
+      Float(stdout.strip)
+    end
+
+    def print_boot_rss!
+      puts "boot RSS: #{format('%.2f', run_float('bin/memory_rss_boot'))} MB"
+    end
+
+    def print_request_rss_delta!
+      puts "request RSS delta: #{format('%+.2f', run_float('bin/memory_rss_request'))} MB"
+    end
   end
 
-  def credentials(environment)
-    uri = URI.parse(database_url(environment))
-    { host: uri.host, port: uri.port, user: decode(uri.user), password: decode(uri.password),
-      database: uri.path.delete_prefix('/') }
+  # Runs all 4 memory checks (bin/memory_rss_boot, bin/memory_rss_request,
+  # bin/memory_profile_boot --total, bin/memory_profile_request --total)
+  # and appends one combined row to benchmarks/memory.csv. See README's
+  # "Memory footprint" section.
+  module MemoryReportRunner
+    module_function
+
+    CSV_PATH = File.expand_path('benchmarks/memory.csv', __dir__)
+
+    def snapshot!
+      row = MemorySnapshot.csv_row(metrics: measure_metrics, git_sha: git_sha)
+      append_row(row)
+      puts "recorded #{row.join(', ')} -> #{File.basename(CSV_PATH)}"
+    end
+
+    def report!
+      rows = read_rows
+      abort 'no snapshots yet — run `rake memory:snapshot`' if rows.empty?
+
+      print_recent(rows)
+      print_deltas(rows)
+    end
+
+    def measure_metrics
+      {
+        rss_boot_mb: MemoryProbe.run_float('bin/memory_rss_boot'),
+        rss_request_mb: MemoryProbe.run_float('bin/memory_rss_request'),
+        profile_boot_mb: MemoryProbe.run_float('bin/memory_profile_boot', '--total'),
+        profile_request_mb: MemoryProbe.run_float('bin/memory_profile_request', '--total')
+      }
+    end
+
+    def git_sha
+      sha, status = Open3.capture2('git', 'rev-parse', '--short', 'HEAD', chdir: __dir__)
+      abort 'git rev-parse failed' unless status.success?
+
+      "#{sha.strip}#{'+dirty' if dirty?}"
+    end
+
+    def dirty?
+      porcelain, status = Open3.capture2('git', 'status', '--porcelain', '--', '.', chdir: __dir__)
+      abort 'git status failed' unless status.success?
+
+      !porcelain.strip.empty?
+    end
+
+    def append_row(row)
+      File.write(CSV_PATH, "#{MemorySnapshot::CSV_HEADER.join(',')}\n") unless File.exist?(CSV_PATH)
+      CSV.open(CSV_PATH, 'a') { |csv| csv << row }
+    end
+
+    def read_rows
+      return [] unless File.exist?(CSV_PATH)
+
+      CSV.read(CSV_PATH, headers: true).each.to_a
+    end
+
+    def print_recent(rows, limit: 10)
+      puts 'recent snapshots:'
+      rows.last(limit).each { |r| puts "  #{r['timestamp']}  #{r['git_sha'].ljust(12)}  #{metrics_summary(r)}" }
+    end
+
+    def metrics_summary(row)
+      MemorySnapshot::METRICS.map { |m| "#{m}=#{row[m.to_s]}" }.join(' ')
+    end
+
+    def print_deltas(rows)
+      latest = rows.last
+      baseline = rows.first
+      previous = rows[-2]
+
+      MemorySnapshot::METRICS.each { |metric| print_metric_deltas(metric, latest, previous, baseline) }
+    end
+
+    def print_metric_deltas(metric, latest, previous, baseline)
+      current = latest[metric.to_s].to_f
+      puts "#{metric} vs previous: #{delta(current, previous[metric.to_s].to_f)}" if previous
+      puts "#{metric} vs baseline (#{baseline['git_sha']}): #{delta(current, baseline[metric.to_s].to_f)}"
+    end
+
+    def delta(current, prior)
+      format('%+.2f MB', current - prior)
+    end
   end
 
-  def database_url(environment)
-    env_file = File.expand_path(".env.#{environment}", __dir__)
-    abort "missing #{File.basename(env_file)}" unless File.exist?(env_file)
+  # Runs a memory_profiler script (bin/memory_profile_boot or
+  # bin/memory_profile_request) in an isolated subprocess, prints the
+  # report, and saves a copy under tmp/ (gitignored — these are point-in-time
+  # diagnostic dumps, not committed trend history like benchmarks/memory.csv).
+  # See README's "Memory footprint" section.
+  module MemoryProfileRunner
+    module_function
 
-    Dotenv.parse(env_file).fetch('DATABASE_URL')
-  end
+    TMP_DIR = File.expand_path('tmp', __dir__)
 
-  def decode(value)
-    URI.decode_www_form_component(value.to_s)
-  end
+    def profile_boot!
+      run_and_save('bin/memory_profile_boot', 'memory_profile_boot.txt')
+    end
 
-  def admin_connection(host, port)
-    admin_user = ENV.fetch('POSTGRES_ADMIN_USER', 'postgres')
-    admin_password = ENV.fetch('POSTGRES_ADMIN_PASSWORD', 'postgres')
-    Sequel.connect("postgres://#{admin_user}:#{admin_password}@#{host}:#{port}/postgres")
-  end
+    def profile_request!
+      run_and_save('bin/memory_profile_request', 'memory_profile_request.txt')
+    end
 
-  def quote_ident(name)
-    %("#{name.gsub('"', '""')}")
-  end
+    def run_and_save(script, filename)
+      stdout, status = Open3.capture2('bundle', 'exec', script, chdir: __dir__)
+      abort "#{script} failed:\n#{stdout}" unless status.success?
 
-  def ensure_role(db, user, password)
-    return if db.fetch('SELECT 1 FROM pg_roles WHERE rolname = ?', user).any?
+      FileUtils.mkdir_p(TMP_DIR)
+      File.write(File.join(TMP_DIR, filename), stdout)
 
-    db.run("CREATE ROLE #{quote_ident(user)} WITH LOGIN PASSWORD #{db.literal(password)}")
-    puts "created role #{user}"
-  end
-
-  def ensure_database(db, name, owner)
-    return if db.fetch('SELECT 1 FROM pg_database WHERE datname = ?', name).any?
-
-    db.run("CREATE DATABASE #{quote_ident(name)} OWNER #{quote_ident(owner)}")
-    puts "created database #{name}"
+      puts stdout
+      puts "(also written to tmp/#{filename})"
+    end
   end
 end
 
@@ -91,7 +238,7 @@ namespace :db do
        'e.g. rake db:init or rake db:init[test]'
   task :init, [:environment] do |_t, args|
     environment = args[:environment] || ENV['APP_ENV'] || 'development'
-    DatabaseInit.init!(environment)
+    RakeSupport::DatabaseInit.init!(environment)
   end
 
   desc 'Create a new migration file, e.g. rake db:new_migration[create_accounts]'
@@ -125,5 +272,45 @@ namespace :resque do
   task test_enqueue: :environment do
     Resque.enqueue(Jobs::IncrementCounterJob)
     puts "enqueued Jobs::IncrementCounterJob (key: #{Jobs::IncrementCounterJob::KEY})"
+  end
+end
+
+namespace :memory do
+  desc 'Run all 4 memory checks and append a combined row to benchmarks/memory.csv'
+  task :snapshot do
+    RakeSupport::MemoryReportRunner.snapshot!
+  end
+
+  desc 'Print recent memory snapshots and deltas from benchmarks/memory.csv'
+  task :report do
+    RakeSupport::MemoryReportRunner.report!
+  end
+end
+
+namespace :memory do
+  namespace :rss do
+    desc 'Measure current boot-time RSS (does not append to the log)'
+    task :boot do
+      RakeSupport::MemoryProbe.print_boot_rss!
+    end
+
+    desc 'Measure RSS growth from a representative GraphQL + REST request cycle (does not append to the log)'
+    task :request do
+      RakeSupport::MemoryProbe.print_request_rss_delta!
+    end
+  end
+end
+
+namespace :memory do
+  namespace :profile do
+    desc 'Profile boot-time allocations (which gems/files allocate the most)'
+    task :boot do
+      RakeSupport::MemoryProfileRunner.profile_boot!
+    end
+
+    desc 'Profile a representative GraphQL + REST request cycle'
+    task :request do
+      RakeSupport::MemoryProfileRunner.profile_request!
+    end
   end
 end

@@ -12,18 +12,24 @@ gem 'rackup'
 gem 'rake'
 gem 'redis'
 gem 'resque'
+gem 'roda'
 gem 'sequel'
 gem 'sorbet-runtime'
 
 group :development do
   gem 'code-scanning-rubocop', require: false
+  gem 'irb', require: false
   gem 'rubocop', require: false
   gem 'rubocop-rspec', require: false
   gem 'sorbet'
 end
 
 group :development, :test do
+  gem 'csv'
   gem 'factory_bot'
+  gem 'get_process_mem'
+  gem 'memory_profiler'
+  gem 'rack-test'
   gem 'rspec'
   gem 'tapioca', require: false
 end

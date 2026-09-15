@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# typed: strict
+
+require_relative '../app/app'
+require_relative '../lib/memory_workload'
+require 'memory_profiler'
+
+request = Rack::MockRequest.new(App.new)
+
+report = MemoryProfiler.report { MemoryWorkload.run(request) }
+
+if ARGV.include?('--total')
+  puts report.total_allocated_memsize / 1_048_576.0
+else
+  report.pretty_print(scale_bytes: true)
+end

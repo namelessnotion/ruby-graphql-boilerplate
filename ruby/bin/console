@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# typed: strict
+
+require_relative '../lib/environment'
+require 'irb'
+
+IRB.start(__FILE__)

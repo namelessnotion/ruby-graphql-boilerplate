@@ -5,11 +5,19 @@ require 'json'
 require 'rack'
 require_relative '../lib/environment'
 
-# `POST /graphql`, plus a `GET /healthz` liveness check.
+# `POST /graphql`, a `GET /healthz` liveness check, and the `/api` REST
+# routes (see Api::App), all served through the same Rack app and Falcon
+# process.
 class App
   extend T::Sig
 
-  sig { params(env: T::Hash[String, T.untyped]).returns(T::Array[T.untyped]) }
+  # A Rack response triplet: HTTP status, header name/value pairs, and the
+  # response body as an array of chunks.
+  RackResponse = T.type_alias { [Integer, T::Hash[String, String], T::Array[String]] }
+
+  API_MAP = T.let(Rack::URLMap.new('/api' => Api::App), Rack::URLMap)
+
+  sig { params(env: T::Hash[String, T.untyped]).returns(RackResponse) }
   def call(env)
     request = Rack::Request.new(env)
     status, headers, body = route(request)
@@ -19,17 +27,14 @@ class App
 
   private
 
-  sig { params(request: Rack::Request).returns(T::Array[T.untyped]) }
+  sig { params(request: Rack::Request).returns(RackResponse) }
   def route(request)
     case [request.request_method, request.path]
-    in ['OPTIONS', '/graphql']
-      preflight
-    in ['GET', '/healthz']
-      healthz
-    in ['POST', '/graphql']
-      graphql(request)
-    else
-      not_found
+    in ['OPTIONS', '/graphql'] then preflight
+    in ['GET', '/healthz'] then healthz
+    in ['POST', '/graphql'] then graphql(request)
+    in [_, path] if path.start_with?('/api') then api(request)
+    else not_found
     end
   end
 
@@ -46,17 +51,25 @@ class App
     { 'access-control-allow-origin' => origin, 'vary' => 'Origin' }
   end
 
-  sig { returns(T::Array[T.untyped]) }
+  sig { returns(RackResponse) }
   def preflight
     [204, { 'access-control-allow-methods' => 'POST, OPTIONS', 'access-control-allow-headers' => 'Content-Type' }, []]
   end
 
-  sig { returns(T::Array[T.untyped]) }
+  sig { returns(RackResponse) }
   def healthz
     json_response(200, status: 'ok')
   end
 
-  sig { params(request: Rack::Request).returns(T::Array[T.untyped]) }
+  sig { params(request: Rack::Request).returns(RackResponse) }
+  def api(request)
+    # Api::App (a Roda app) and Rack::URLMap have no Sorbet sigs of their
+    # own, so this cast documents the Rack response contract they actually
+    # honor at runtime.
+    T.cast(API_MAP.call(request.env), RackResponse)
+  end
+
+  sig { params(request: Rack::Request).returns(RackResponse) }
   def graphql(request)
     payload = JSON.parse(request.body.read)
 
@@ -69,7 +82,7 @@ class App
     json_response(400, errors: [{ message: "invalid JSON: #{e.message}" }])
   end
 
-  sig { params(payload: T::Hash[String, T.untyped]).returns(T::Array[T.untyped]) }
+  sig { params(payload: T::Hash[String, T.untyped]).returns(RackResponse) }
   def single(payload)
     result = AppSchema.execute(
       payload['query'],
@@ -81,7 +94,7 @@ class App
     json_response(200, result.to_h)
   end
 
-  sig { params(payloads: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
+  sig { params(payloads: T::Array[T.untyped]).returns(RackResponse) }
   def multiplexed(payloads)
     queries = payloads.map do |payload|
       {
@@ -96,12 +109,12 @@ class App
     json_response(200, results.map(&:to_h))
   end
 
-  sig { returns(T::Array[T.untyped]) }
+  sig { returns(RackResponse) }
   def not_found
     json_response(404, errors: [{ message: 'not found' }])
   end
 
-  sig { params(status: Integer, body: T.untyped).returns(T::Array[T.untyped]) }
+  sig { params(status: Integer, body: T.untyped).returns(RackResponse) }
   def json_response(status, body)
     [status, { 'content-type' => 'application/json' }, [JSON.generate(body)]]
   end

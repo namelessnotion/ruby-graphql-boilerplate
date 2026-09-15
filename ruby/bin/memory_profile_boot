@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# typed: strict
+
+require 'memory_profiler'
+
+report = MemoryProfiler.report { require_relative '../lib/environment' }
+
+if ARGV.include?('--total')
+  puts report.total_allocated_memsize / 1_048_576.0
+else
+  report.pretty_print(scale_bytes: true)
+end
