@@ -4,97 +4,82 @@
 require 'rack/test'
 require_relative '../../../../app/app'
 
-RSpec.describe 'GET /api/v1/notes' do
+RSpec.describe '/api/v1/notes', :aggregate_failures do
   include Rack::Test::Methods
 
   def app
     App.new
   end
 
-  it 'returns all notes as JSON' do
-    first = Note.create(note: 'first note')
-    second = Note.create(note: 'second note')
-
-    get '/api/v1/notes'
-    body = JSON.parse(last_response.body)
-
-    expect(last_response.status).to eq(200)
-    expect(body.map { |note| note['id'] }).to contain_exactly(first.id, second.id)
-    expect(body.map { |note| note['note'] }).to contain_exactly('first note', 'second note')
+  def json_body
+    JSON.parse(last_response.body)
   end
 
-  it 'returns an empty array when there are no notes' do
-    get '/api/v1/notes'
+  describe 'GET /api/v1/notes' do
+    it 'returns all notes as JSON' do
+      first = Note.create(note: 'first note')
+      second = Note.create(note: 'second note')
 
-    expect(last_response.status).to eq(200)
-    expect(JSON.parse(last_response.body)).to eq([])
-  end
-end
+      get '/api/v1/notes'
 
-RSpec.describe 'GET /api/v1/notes/:id' do
-  include Rack::Test::Methods
+      expect(last_response.status).to eq(200)
+      expect(json_body.map { |note| note['id'] }).to contain_exactly(first.id, second.id)
+      expect(json_body.map { |note| note['note'] }).to contain_exactly('first note', 'second note')
+    end
 
-  def app
-    App.new
-  end
+    it 'returns an empty array when there are no notes' do
+      get '/api/v1/notes'
 
-  it 'returns the note' do
-    note = Note.create(note: 'remember the milk')
-
-    get "/api/v1/notes/#{note.id}"
-    body = JSON.parse(last_response.body)
-
-    expect(last_response.status).to eq(200)
-    expect(body['id']).to eq(note.id)
-    expect(body['note']).to eq('remember the milk')
+      expect(last_response.status).to eq(200)
+      expect(json_body).to eq([])
+    end
   end
 
-  it 'returns 404 with a JSON error body when the note does not exist' do
-    get '/api/v1/notes/0'
+  describe 'GET /api/v1/notes/:id' do
+    it 'returns the note' do
+      note = Note.create(note: 'remember the milk')
 
-    expect(last_response.status).to eq(404)
-    expect(JSON.parse(last_response.body)['errors']).to include('note not found')
-  end
-end
+      get "/api/v1/notes/#{note.id}"
 
-RSpec.describe 'POST /api/v1/notes' do
-  include Rack::Test::Methods
+      expect(last_response.status).to eq(200)
+      expect(json_body['id']).to eq(note.id)
+      expect(json_body['note']).to eq('remember the milk')
+    end
 
-  def app
-    App.new
-  end
+    it 'returns 404 with a JSON error body when the note does not exist' do
+      get '/api/v1/notes/0'
 
-  it 'persists a note via Services::SaveNote and returns 201 with a Location header' do
-    header 'Content-Type', 'application/json'
-    post '/api/v1/notes', JSON.generate(note: 'buy milk')
-    body = JSON.parse(last_response.body)
-
-    expect(last_response.status).to eq(201)
-    expect(last_response.headers['location']).to eq("/api/v1/notes/#{body['id']}")
-    expect(body['note']).to eq('buy milk')
-    expect(Note[body['id']].note).to eq('buy milk')
+      expect(last_response.status).to eq(404)
+      expect(json_body['errors']).to include('note not found')
+    end
   end
 
-  it 'returns 422 with a JSON error body when the note is blank' do
-    header 'Content-Type', 'application/json'
-    post '/api/v1/notes', JSON.generate(note: '')
+  describe 'POST /api/v1/notes' do
+    it 'persists a note via Services::SaveNote and returns 201 with a Location header' do
+      header 'Content-Type', 'application/json'
+      post '/api/v1/notes', JSON.generate(note: 'buy milk')
 
-    expect(last_response.status).to eq(422)
-    expect(JSON.parse(last_response.body)['errors']).to include('note is not present')
+      expect(last_response.status).to eq(201)
+      expect(last_response.headers['location']).to eq("/api/v1/notes/#{json_body['id']}")
+      expect(json_body['note']).to eq('buy milk')
+      expect(Note[json_body['id']].note).to eq('buy milk')
+    end
+
+    it 'returns 422 with a JSON error body when the note is blank' do
+      header 'Content-Type', 'application/json'
+      post '/api/v1/notes', JSON.generate(note: '')
+
+      expect(last_response.status).to eq(422)
+      expect(json_body['errors']).to include('note is not present')
+    end
   end
-end
 
-RSpec.describe 'OPTIONS /api/v1/notes' do
-  include Rack::Test::Methods
+  describe 'OPTIONS /api/v1/notes' do
+    it 'returns a CORS preflight response' do
+      options '/api/v1/notes'
 
-  def app
-    App.new
-  end
-
-  it 'returns a CORS preflight response' do
-    options '/api/v1/notes'
-
-    expect(last_response.status).to eq(204)
-    expect(last_response.headers['access-control-allow-methods']).to eq('GET, POST, PATCH, DELETE, OPTIONS')
+      expect(last_response.status).to eq(204)
+      expect(last_response.headers['access-control-allow-methods']).to eq('GET, POST, PATCH, DELETE, OPTIONS')
+    end
   end
 end

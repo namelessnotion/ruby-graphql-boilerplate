@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 # typed: false
 
-RSpec.describe 'notes query' do
+RSpec.describe 'notes query', :aggregate_failures do
   def execute
     AppSchema.execute(<<~GQL).to_h
       query {

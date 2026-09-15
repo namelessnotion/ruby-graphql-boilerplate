@@ -3,7 +3,7 @@
 
 require 'open3'
 
-RSpec.describe 'bin/memory_rss_boot' do
+RSpec.describe 'bin/memory_rss_boot', :aggregate_failures do
   it 'prints a parseable, positive RSS in megabytes' do
     stdout, status = Open3.capture2('bundle', 'exec', 'bin/memory_rss_boot')
 

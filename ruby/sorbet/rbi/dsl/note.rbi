@@ -9,7 +9,10 @@ class Note
   extend T::Generic
   include GeneratedAttributeMethods
   include GeneratedValidationMethods
+  extend GeneratedStateMachineClassMethods
   extend GeneratedClassMethods
+  include StateMachineInstanceHelperModule
+  extend StateMachineClassHelperModule
 
   Elem = type_template { { fixed: ::Note } }
 
@@ -31,6 +34,12 @@ class Note
 
     sig { params(value: T.nilable(String)).returns(T.nilable(String)) }
     def note=(value); end
+
+    sig { returns(String) }
+    def state; end
+
+    sig { params(value: T.nilable(String)).returns(T.nilable(String)) }
+    def state=(value); end
 
     sig { returns(Time) }
     def updated_at; end
@@ -220,6 +229,18 @@ class Note
     def with_pk!(pk); end
   end
 
+  module GeneratedStateMachineClassMethods
+    sig { params(event: T.any(String, T::Hash[Symbol, T.untyped]), accessor: Symbol).returns(T.untyped) }
+    def timestamp_accessor(event, accessor); end
+
+    sig do
+      params(
+        events_and_accessors: T::Array[[T.any(String, T::Hash[Symbol, T.untyped]), Symbol]]
+      ).returns(T.untyped)
+    end
+    def timestamp_accessors(events_and_accessors); end
+  end
+
   module GeneratedValidationMethods
     sig do
       params(
@@ -339,5 +360,84 @@ class Note
     include GeneratedDatasetMethods
 
     Elem = type_member { { fixed: ::Note } }
+  end
+
+  module StateMachineClassHelperModule
+    sig { params(event: T.any(String, Symbol)).returns(String) }
+    def human_state_event_name(event); end
+
+    sig { params(state: T.any(String, Symbol)).returns(String) }
+    def human_state_name(state); end
+  end
+
+  module StateMachineInstanceHelperModule
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def archive(*args); end
+
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def archive!(*args); end
+
+    sig { params(args: T.untyped).returns(T.nilable(::StateMachines::Transition)) }
+    def archive_transition(*args); end
+
+    sig { returns(T::Boolean) }
+    def archived?; end
+
+    sig { returns(T::Boolean) }
+    def can_archive?; end
+
+    sig { returns(T::Boolean) }
+    def can_complete?; end
+
+    sig { returns(T::Boolean) }
+    def can_willnotdo?; end
+
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def complete(*args); end
+
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def complete!(*args); end
+
+    sig { params(args: T.untyped).returns(T.nilable(::StateMachines::Transition)) }
+    def complete_transition(*args); end
+
+    sig { returns(T::Boolean) }
+    def completed?; end
+
+    sig { params(event: T.any(String, Symbol), args: T.untyped).returns(T::Boolean) }
+    def fire_state_event(event, *args); end
+
+    sig { returns(String) }
+    def human_state_name; end
+
+    sig { returns(T::Boolean) }
+    def pending?; end
+
+    sig { params(state: T.any(String, Symbol)).returns(T::Boolean) }
+    def state?(state); end
+
+    sig { params(args: T.untyped).returns(T::Array[T.any(String, Symbol)]) }
+    def state_events(*args); end
+
+    sig { returns(T.any(String, Symbol)) }
+    def state_name; end
+
+    sig { params(args: T.untyped).returns(T::Array[::StateMachines::Transition]) }
+    def state_paths(*args); end
+
+    sig { params(args: T.untyped).returns(T::Array[::StateMachines::Transition]) }
+    def state_transitions(*args); end
+
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def willnotdo(*args); end
+
+    sig { params(args: T.untyped).returns(T::Boolean) }
+    def willnotdo!(*args); end
+
+    sig { returns(T::Boolean) }
+    def willnotdo?; end
+
+    sig { params(args: T.untyped).returns(T.nilable(::StateMachines::Transition)) }
+    def willnotdo_transition(*args); end
   end
 end

@@ -7,6 +7,8 @@ require_relative '../mutations/save_note'
 module Types
   # Root Mutation type
   class MutationType < BaseObject
+    description 'The root mutation type.'
+
     field :save_note, mutation: Mutations::SaveNote
   end
 end

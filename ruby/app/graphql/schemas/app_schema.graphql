@@ -3,7 +3,13 @@ An ISO 8601-encoded datetime
 """
 scalar ISO8601DateTime @specifiedBy(url: "https://tools.ietf.org/html/rfc3339")
 
+"""
+The root mutation type.
+"""
 type Mutation {
+  """
+  Persists a new note.
+  """
   saveNote(
     """
     The note text to save.
@@ -12,10 +18,28 @@ type Mutation {
   ): SaveNotePayload
 }
 
+"""
+A persisted note.
+"""
 type Note {
+  """
+  When the note was created.
+  """
   createdAt: ISO8601DateTime!
+
+  """
+  The note id.
+  """
   id: ID!
+
+  """
+  The note text.
+  """
   note: String!
+
+  """
+  When the note was last updated.
+  """
   updatedAt: ISO8601DateTime!
 }
 
@@ -79,6 +103,9 @@ type PageInfo {
   startCursor: String
 }
 
+"""
+The root query type.
+"""
 type Query {
   """
   All notes.

@@ -7,6 +7,8 @@ require_relative '../types/objects/note_type'
 module Mutations
   # Persists a new Note via Services::SaveNote.
   class SaveNote < BaseMutation
+    description 'Persists a new note.'
+
     argument :note, String, required: true, description: 'The note text to save.'
 
     field :note, Types::NoteType, null: false, description: 'The saved note.'

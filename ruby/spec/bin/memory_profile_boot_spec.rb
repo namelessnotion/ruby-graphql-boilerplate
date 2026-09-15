@@ -3,7 +3,7 @@
 
 require 'open3'
 
-RSpec.describe 'bin/memory_profile_boot' do
+RSpec.describe 'bin/memory_profile_boot', :aggregate_failures do
   it 'prints a boot-time allocation report' do
     stdout, status = Open3.capture2('bundle', 'exec', 'bin/memory_profile_boot')
 

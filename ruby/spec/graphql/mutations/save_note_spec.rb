@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 # typed: false
 
-RSpec.describe Mutations::SaveNote do
+RSpec.describe Mutations::SaveNote, :aggregate_failures do
   def execute(note:)
     AppSchema.execute(
       'mutation($note: String!) { saveNote(note: $note) { note { id note createdAt updatedAt } } }',

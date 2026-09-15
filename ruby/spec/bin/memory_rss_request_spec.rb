@@ -3,7 +3,7 @@
 
 require 'open3'
 
-RSpec.describe 'bin/memory_rss_request' do
+RSpec.describe 'bin/memory_rss_request', :aggregate_failures do
   it 'prints a parseable RSS delta in megabytes' do
     stdout, status = Open3.capture2('bundle', 'exec', 'bin/memory_rss_request')
 

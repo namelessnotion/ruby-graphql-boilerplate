@@ -1,5 +1,51 @@
+plugins:
+  - rubocop-factory_bot
+  - rubocop-graphql
+  - rubocop-rake
+  - rubocop-rspec
+  - rubocop-sequel
+
+# Without this, redeclaring `Exclude:` for a cop below replaces the plugin's
+# own default `Exclude:` list instead of adding to it (e.g. rubocop-rspec
+# already excludes spec/requests/**/* from RSpec/DescribeClass; we don't want
+# to lose that just because we're excluding a few more paths).
+inherit_mode:
+  merge:
+    - Exclude
+
 AllCops:
   NewCops: enable
   Exclude:
     - "sorbet/**/*"
     - "vendor/bundle/**/*"
+
+# RSpec files naturally nest describe/context/it_behaves_like blocks deeply,
+# and Rake namespace blocks grow as tasks are added to them; the line-count
+# heuristic that catches overgrown production methods isn't a useful signal
+# for either.
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "Rakefile"
+
+# rubocop-rspec already excludes spec/requests, spec/features, spec/system,
+# spec/routing, and spec/views by default, since those describe a behavior
+# (an endpoint, a page) rather than a single class. The same is true here for
+# CLI script specs, the DB connection smoke test, and GraphQL query specs
+# (a query spans the schema/resolvers, not one type).
+RSpec/DescribeClass:
+  Exclude:
+    - "spec/bin/**/*"
+    - "spec/database_connection_spec.rb"
+    - "spec/graphql/queries/**/*"
+
+# This suite writes complete arrange/act/assert examples in one block rather
+# than splitting setup into `let`/`before`, so the default of 5 lines is
+# routinely, harmlessly exceeded by legitimate examples.
+RSpec/ExampleLength:
+  Max: 8
+
+# `not_change` is defined in spec/spec_helper.rb via define_negated_matcher,
+# so the cop can autocorrect compound `.and change(...).by(0)` expectations.
+RSpec/ChangeByZero:
+  NegatedMatcher: not_change

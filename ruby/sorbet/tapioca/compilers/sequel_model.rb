@@ -103,6 +103,11 @@ module Tapioca
             klass.create_include('GeneratedValidationMethods')
           end
 
+          if state_machine_plugin?
+            klass.create_module('GeneratedStateMachineClassMethods') { |mod| add_state_machine_methods(mod) }
+            klass.create_extend('GeneratedStateMachineClassMethods')
+          end
+
           klass.create_module('GeneratedClassMethods') { |mod| add_class_methods(mod, model, dataset) }
           klass.create_extend('GeneratedClassMethods')
 
@@ -148,6 +153,32 @@ module Tapioca
       # `validates_unique` alone takes a bare splat (optionally a trailing Hash of
       # options) rather than the `(attribute_or_atts, opts = {})` shape every other
       # validates_* method shares.
+      # `sequel-state-machine`'s `state_machine` plugin `extend`s
+      # `Sequel::Plugins::StateMachine::ClassMethods` (`timestamp_accessor(s)`) onto any
+      # model that calls `plugin :state_machine`. The state predicate/event methods the
+      # same plugin generates (`pending?`, `complete!`, ...) come from the `state_machines`
+      # gem itself and are already covered by tapioca's bundled `StateMachines` DSL compiler.
+      sig { returns(T::Boolean) }
+      def state_machine_plugin?
+        T.unsafe(constant).respond_to?(:timestamp_accessors)
+      end
+
+      # Signature follows Sequel::Plugins::StateMachine::ClassMethods.
+      sig { params(mod: RBI::Scope).void }
+      def add_state_machine_methods(mod)
+        event_type = 'T.any(String, T::Hash[Symbol, T.untyped])'
+        accessor_param = create_param('accessor', type: 'Symbol')
+
+        mod.create_method(
+          'timestamp_accessors',
+          parameters: [create_param('events_and_accessors', type: "T::Array[[#{event_type}, Symbol]]")]
+        )
+        mod.create_method(
+          'timestamp_accessor',
+          parameters: [create_param('event', type: event_type), accessor_param]
+        )
+      end
+
       sig { params(mod: RBI::Scope).void }
       def add_validation_helpers(mod)
         atts = 'T.any(Symbol, T::Array[Symbol])'

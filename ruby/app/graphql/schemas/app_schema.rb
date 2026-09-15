@@ -10,5 +10,8 @@ class AppSchema < GraphQL::Schema
   query Types::QueryType
   mutation Types::MutationType
 
+  max_complexity 300
+  max_depth 15
+
   connections.add(Sequel::Dataset, Connections::SequelDatasetConnection)
 end

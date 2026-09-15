@@ -9,6 +9,7 @@ require 'uri'
 require 'resque/tasks'
 require_relative 'lib/memory_snapshot'
 
+desc 'Load the application environment'
 task :environment do
   require_relative 'lib/environment'
 end
@@ -266,6 +267,7 @@ namespace :db do
 end
 
 namespace :resque do
+  desc 'Load the application environment (resque:test_enqueue and resque:work depend on this)'
   task setup: :environment
 
   desc 'Enqueue Jobs::IncrementCounterJob once, to check a worker can reach Redis'
@@ -285,9 +287,7 @@ namespace :memory do
   task :report do
     RakeSupport::MemoryReportRunner.report!
   end
-end
 
-namespace :memory do
   namespace :rss do
     desc 'Measure current boot-time RSS (does not append to the log)'
     task :boot do
@@ -299,9 +299,7 @@ namespace :memory do
       RakeSupport::MemoryProbe.print_request_rss_delta!
     end
   end
-end
 
-namespace :memory do
   namespace :profile do
     desc 'Profile boot-time allocations (which gems/files allocate the most)'
     task :boot do

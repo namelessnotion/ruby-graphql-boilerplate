@@ -18,6 +18,11 @@
 ENV['APP_ENV'] ||= 'test'
 require_relative '../lib/environment'
 
+# Lets compound expectations negate `change`, e.g.
+# `expect { ... }.to raise_error(Foo).and not_change(Bar, :count)` — a bare
+# `.not_to change(...)` can't be chained with `.and`.
+RSpec::Matchers.define_negated_matcher :not_change, :change
+
 RSpec.configure do |config|
   # Isolate each example in its own database transaction and roll it back
   # afterwards, so specs can freely persist records without leaking state

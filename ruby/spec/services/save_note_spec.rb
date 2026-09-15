@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 # typed: false
 
-RSpec.describe Services::SaveNote do
+RSpec.describe Services::SaveNote, :aggregate_failures do
   it 'persists a note via the Note model' do
     note = described_class.new(note: 'remember the milk').call
 
@@ -17,6 +17,6 @@ RSpec.describe Services::SaveNote do
   it 'does not persist a note when validation fails' do
     expect { described_class.new(note: '').call }
       .to raise_error(Sequel::ValidationFailed)
-      .and change(Note, :count).by(0)
+      .and not_change(Note, :count)
   end
 end
