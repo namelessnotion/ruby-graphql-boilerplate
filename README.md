@@ -46,17 +46,19 @@ against it (`APP_ENV` defaults to `test` in specs).
 With the database set up (above), run the API and the client in two separate
 terminals.
 
-1. **Ruby API** (GraphQL + REST) — `bin/server` defaults to port 9292, but the
-   Vue client expects `http://localhost:3000/graphql`, so bind it to port 3000
-   and allow the Vite dev origin through CORS:
+1. **Ruby API** (GraphQL + REST) — `bin/server` binds to port 9292, which is
+   where the Vue client expects it, so the only thing to set is the Vite dev
+   origin CORS allows:
 
    ```sh
    cd ruby
-   LISTEN_ADDR=http://0.0.0.0:3000 CORS_ALLOWED_ORIGIN=http://localhost:5173 bundle exec bin/server
+   CORS_ALLOWED_ORIGIN=http://localhost:5173 bundle exec bin/server
    ```
 
-   Verify it's up: `curl http://localhost:3000/healthz` should return
-   `{"status":"ok"}`.
+   Verify it's up: `curl http://localhost:9292/healthz` should return
+   `{"status":"ok"}`. To bind elsewhere, set `LISTEN_ADDR` (e.g.
+   `LISTEN_ADDR=http://0.0.0.0:4000`) and point the client at the new address
+   with `VITE_GRAPHQL_URL`.
 
 2. **Vue client** (Vite dev server, defaults to port 5173):
 
@@ -67,7 +69,7 @@ terminals.
    ```
 
    Open http://localhost:5173 — it talks to the API at
-   `http://localhost:3000/graphql` by default (override with a `VITE_GRAPHQL_URL`
+   `http://localhost:9292/graphql` by default (override with a `VITE_GRAPHQL_URL`
    env var, e.g. in `vuejs/.env.local`, if you bind the API elsewhere).
 
 If you change the GraphQL schema, regenerate the client's typed operations
@@ -101,8 +103,8 @@ server or port. `App#route` dispatches any `/api/*` path to it via
 | OPTIONS| `/api/v1/notes`      | CORS preflight                  |
 
 ```sh
-curl http://localhost:3000/api/v1/notes
-curl -X POST http://localhost:3000/api/v1/notes \
+curl http://localhost:9292/api/v1/notes
+curl -X POST http://localhost:9292/api/v1/notes \
   -H 'Content-Type: application/json' \
   -d '{"note": "remember the milk"}'
 ```
@@ -204,7 +206,7 @@ bin/doctor
 It checks Postgres, Redis, the Ruby API, a Resque worker, and the Vite/Vue
 client, reading connection details from `ruby/.env.development`. Override
 `API_URL` / `VITE_URL` if you've bound those somewhere other than this
-README's defaults (`http://localhost:3000` and `http://localhost:5173`).
+README's defaults (`http://localhost:9292` and `http://localhost:5173`).
 Exits non-zero if anything's down.
 
 ## Memory footprint
