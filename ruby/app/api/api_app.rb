@@ -2,6 +2,7 @@
 # typed: false
 
 require 'roda'
+require_relative '../request_tracing'
 require_relative 'v1/app'
 
 module Api
@@ -9,13 +10,16 @@ module Api
   # Routes are versioned — /api/v1 dispatches to Api::V1::App
   # CORS preflight is handled once here for the whole /api surface.
   class App < Roda
+    include RequestTracing
+
     plugin :all_verbs
     plugin :json
 
     # Anything escaping this surface answers with the REST error contract
     # ({ errors: [...] } and an explicit status) rather than a bare 500 from
     # the web server. The exception itself is deliberately not echoed back.
-    plugin :error_handler do |_e|
+    plugin :error_handler do |e|
+      log_unhandled(request, e)
       response.status = 500
       { errors: ['internal server error'] }
     end

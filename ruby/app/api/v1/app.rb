@@ -2,17 +2,21 @@
 # typed: false
 
 require 'roda'
+require_relative '../../request_tracing'
 require_relative 'notes'
 
 module Api
   module V1
     # Mounted at /api/v1 by Api::App.
     class App < Roda
+      include RequestTracing
+
       plugin :json
 
       # See Api::App — each Roda app needs its own handler, since a nested app
       # that handles its own errors never lets them reach its parent.
-      plugin :error_handler do |_e|
+      plugin :error_handler do |e|
+        log_unhandled(request, e)
         response.status = 500
         { errors: ['internal server error'] }
       end

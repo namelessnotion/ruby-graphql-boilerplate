@@ -20,7 +20,23 @@ class AppSchema < GraphQL::Schema
   # Persistence-layer exceptions are translated to client-facing GraphQL
   # errors once, here, so resolvers stay thin and every mutation reports the
   # same failure the same way.
-  rescue_from(Sequel::NoMatchingRow) { raise GraphQL::ExecutionError, 'note not found' }
-  rescue_from(Sequel::ValidationFailed) { |error| raise GraphQL::ExecutionError, error.message }
-  rescue_from(StateMachines::Sequel::FailedTransition) { |error| raise GraphQL::ExecutionError, error.message }
+  #
+  # Each one is also recorded on the span in scope before it is translated —
+  # this is the only place the original exception still exists, since what the
+  # client receives is a message with no class, backtrace or cause. See
+  # Observability.record_exception for why these do not mark the span failed.
+  rescue_from(Sequel::NoMatchingRow) do |error|
+    Observability.record_exception(error)
+    raise GraphQL::ExecutionError, 'note not found'
+  end
+
+  rescue_from(Sequel::ValidationFailed) do |error|
+    Observability.record_exception(error)
+    raise GraphQL::ExecutionError, error.message
+  end
+
+  rescue_from(StateMachines::Sequel::FailedTransition) do |error|
+    Observability.record_exception(error)
+    raise GraphQL::ExecutionError, error.message
+  end
 end

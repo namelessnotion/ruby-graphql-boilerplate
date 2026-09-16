@@ -18,6 +18,9 @@
 ENV['APP_ENV'] ||= 'test'
 require_relative '../lib/environment'
 
+# Shared contexts and helpers used by more than one spec file.
+Dir[File.expand_path('support/**/*.rb', __dir__)].each { |file| require file }
+
 # Lets compound expectations negate `change`, e.g.
 # `expect { ... }.to raise_error(Foo).and not_change(Bar, :count)` — a bare
 # `.not_to change(...)` can't be chained with `.and`.

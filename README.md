@@ -209,6 +209,47 @@ client, reading connection details from `ruby/.env.development`. Override
 README's defaults (`http://localhost:9292` and `http://localhost:5173`).
 Exits non-zero if anything's down.
 
+## Observability
+
+Tracing and structured logging live in `ruby/lib/observability.rb`, in two
+tiers, because the OpenTelemetry signals are not equally mature.
+
+**Structured logs** are always on. `Observability::Log` writes one JSON object
+per line to stdout, each carrying the `trace_id` and `span_id` of the span in
+scope when it was written — which is what lets a log line be read next to the
+trace it belongs to. `LOG_LEVEL` sets the threshold (`info` in development,
+`fatal` in the test env so a run stays quiet).
+
+**Traces** come from the stable OpenTelemetry trace SDK (1.x) and export over
+OTLP. `OTEL_SDK_DISABLED` switches the tier off, leaving a no-op tracer:
+spans still open and close, they just record nothing and cost nothing, and
+neither the SDK nor the OTLP exporter is even loaded. It is set in both
+`ruby/.env.development` and `ruby/.env.test` for now, since no collector runs
+locally yet; the suite therefore needs nothing running, and specs that assert
+on spans install an in-memory exporter for their own duration.
+
+Metrics are deliberately absent. The metrics and logs SDKs are both pre-1.0
+and break between minor versions, so RED metrics are left for the collector to
+derive from the spans below rather than emitted by the app.
+
+Spans are opened at three hand-written seams, and the rest come from the
+instrumentation gems for GraphQL, pg, Redis and Resque:
+
+- **`App#call`** — one server span per request, named `<METHOD> <route>` with
+  record ids collapsed (`GET /api/v1/notes/:id`) so the names stay usable as
+  metric series. It continues an inbound `traceparent`, so a trace that starts
+  in the browser carries on into the API instead of breaking in two, and it
+  records the response status, marking 5xx failed.
+- **`Services::BaseService#perform`** — every write in the app funnels through
+  this one method, so one span there covers them all.
+- **`AppSchema`** — the `rescue_from` handlers record the original exception
+  on the span before translating it into a client-facing GraphQL error, which
+  is otherwise the last place that exception exists.
+
+To see it working without a collector, run the app with `OTEL_SDK_DISABLED=false`
+and `OTEL_TRACES_EXPORTER=none`, then add an in-memory exporter in
+`bin/console`.
+
 ## Memory footprint
 
 Four independent checks, each an isolated subprocess (so a reading reflects
