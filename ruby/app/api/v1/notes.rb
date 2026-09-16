@@ -12,6 +12,13 @@ module Api
       plugin :json
       plugin :json_parser, content_type_regexp: %r{\Aapplication/json\b}i
 
+      # See Api::App — each Roda app needs its own handler, since a nested app
+      # that handles its own errors never lets them reach its parent.
+      plugin :error_handler do |_e|
+        response.status = 500
+        { errors: ['internal server error'] }
+      end
+
       route do |r|
         r.is do
           r.get { list_notes }
@@ -30,13 +37,17 @@ module Api
       end
 
       def create_note(params)
-        note = Services::SaveNote.new(note: params['note']).call
+        text = params['note']
+        # Services::SaveNote's sig only accepts a String; a missing or
+        # non-string `note` is a client error, not a 500.
+        return unprocessable('note is not present') unless text.is_a?(String)
+
+        note = Services::SaveNote.new(note: text).call
         response.status = 201
         response['location'] = "/api/v1/notes/#{note.id}"
         serialize(note)
       rescue Sequel::ValidationFailed => e
-        response.status = 422
-        { errors: [e.message] }
+        unprocessable(e.message)
       end
 
       def show_note(id)
@@ -45,6 +56,11 @@ module Api
 
         response.status = 404
         { errors: ['note not found'] }
+      end
+
+      def unprocessable(message)
+        response.status = 422
+        { errors: [message] }
       end
 
       def serialize(note)

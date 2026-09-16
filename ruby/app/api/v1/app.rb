@@ -10,6 +10,13 @@ module Api
     class App < Roda
       plugin :json
 
+      # See Api::App — each Roda app needs its own handler, since a nested app
+      # that handles its own errors never lets them reach its parent.
+      plugin :error_handler do |_e|
+        response.status = 500
+        { errors: ['internal server error'] }
+      end
+
       route do |r|
         r.on('notes') { r.run Api::V1::Notes }
 
