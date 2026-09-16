@@ -12,6 +12,14 @@ module Api
     plugin :all_verbs
     plugin :json
 
+    # Anything escaping this surface answers with the REST error contract
+    # ({ errors: [...] } and an explicit status) rather than a bare 500 from
+    # the web server. The exception itself is deliberately not echoed back.
+    plugin :error_handler do |_e|
+      response.status = 500
+      { errors: ['internal server error'] }
+    end
+
     route do |r|
       r.options { cors_preflight }
 

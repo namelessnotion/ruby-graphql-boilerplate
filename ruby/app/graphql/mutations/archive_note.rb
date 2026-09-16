@@ -16,10 +16,6 @@ module Mutations
     sig { params(id: String).returns(T::Hash[Symbol, Note]) }
     def resolve(id:)
       { note: Services::ArchiveNote.new(id: id.to_i).call }
-    rescue Sequel::NoMatchingRow
-      raise GraphQL::ExecutionError, 'note not found'
-    rescue StateMachines::Sequel::FailedTransition => e
-      raise GraphQL::ExecutionError, e.message
     end
   end
 end

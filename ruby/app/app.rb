@@ -20,7 +20,15 @@ class App
   sig { params(env: T::Hash[String, T.untyped]).returns(RackResponse) }
   def call(env)
     request = Rack::Request.new(env)
-    status, headers, body = route(request)
+
+    # Last line of defence: anything a surface fails to handle still answers
+    # with JSON rather than a bare 500 from the web server. CORS headers are
+    # still merged in below so the browser can actually read the body.
+    status, headers, body = begin
+      route(request)
+    rescue StandardError
+      internal_server_error
+    end
 
     [status, headers.merge(cors_headers(request)), body]
   end
@@ -112,6 +120,11 @@ class App
   sig { returns(RackResponse) }
   def not_found
     json_response(404, errors: [{ message: 'not found' }])
+  end
+
+  sig { returns(RackResponse) }
+  def internal_server_error
+    json_response(500, errors: [{ message: 'internal server error' }])
   end
 
   sig { params(status: Integer, body: T.untyped).returns(RackResponse) }

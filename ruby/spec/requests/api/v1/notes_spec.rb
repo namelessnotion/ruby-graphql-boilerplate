@@ -72,6 +72,22 @@ RSpec.describe '/api/v1/notes', :aggregate_failures do
       expect(last_response.status).to eq(422)
       expect(json_body['errors']).to include('note is not present')
     end
+
+    it 'returns 422 with a JSON error body when the note key is missing' do
+      header 'Content-Type', 'application/json'
+      post '/api/v1/notes', JSON.generate({})
+
+      expect(last_response.status).to eq(422)
+      expect(json_body['errors']).to include('note is not present')
+    end
+
+    it 'returns 422 with a JSON error body when the note is not a string' do
+      header 'Content-Type', 'application/json'
+      post '/api/v1/notes', JSON.generate(note: 42)
+
+      expect(last_response.status).to eq(422)
+      expect(json_body['errors']).to include('note is not present')
+    end
   end
 
   describe 'OPTIONS /api/v1/notes' do

@@ -18,17 +18,13 @@ module Mutations
 
     sig { params(id: String, note_attributes: Types::Inputs::NoteAttributesInput).returns(T::Hash[Symbol, Note]) }
     def resolve(id:, note_attributes:)
-      note = Services::UpdateNote.new(
-        id: id.to_i,
-        note: note_attributes.note,
-        due_at: note_attributes.due_at
-      ).call
-
-      { note: }
-    rescue Sequel::NoMatchingRow
-      raise GraphQL::ExecutionError, 'note not found'
-    rescue Sequel::ValidationFailed => e
-      raise GraphQL::ExecutionError, e.message
+      {
+        note: Services::UpdateNote.new(
+          id: id.to_i,
+          note: note_attributes.note,
+          due_at: note_attributes.due_at
+        ).call
+      }
     end
   end
 end

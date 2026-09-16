@@ -17,8 +17,6 @@ module Mutations
     sig { params(note: String, due_at: T.nilable(Time)).returns(T::Hash[Symbol, Note]) }
     def resolve(note:, due_at: nil)
       { note: Services::SaveNote.new(note:, due_at:).call }
-    rescue Sequel::ValidationFailed => e
-      raise GraphQL::ExecutionError, e.message
     end
   end
 end
