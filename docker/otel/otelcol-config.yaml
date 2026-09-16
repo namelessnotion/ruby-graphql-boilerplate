@@ -1,0 +1,119 @@
+# Collector config for the `otel` service in compose.yml, mounted over the
+# /otel-lgtm/otelcol-config.yaml the image ships with. Committed and diffable
+# for the same reason docker/postgres/init-databases.sh is: it's container
+# configuration this app owns, not something to rediscover by hand.
+#
+# This is the image's stock pipeline — OTLP in on 4317/4318, out to the Tempo,
+# Prometheus and Loki running beside the collector in the same container —
+# with two additions the stock config doesn't cover, each marked below.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        # ADDED: the Vite dev origin, so the browser can export straight to
+        # the collector. Browser export is genuinely cross-origin — the page
+        # is served from :5173 and the collector listens on :4318.
+        #
+        # Stock is `http://*`, which works but allows any http origin. Listing
+        # the one origin we serve from is narrower and says what it means. A
+        # plain `["*"]` is the one thing that does NOT work here: the
+        # collector's CORS response always carries
+        # `Access-Control-Allow-Credentials: true`, and browsers reject a bare
+        # wildcard alongside it.
+        cors:
+          allowed_origins:
+            - http://localhost:5173
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: "opentelemetry-collector"
+          scrape_interval: 1s
+          static_configs:
+            - targets: ["127.0.0.1:8888"]
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: "/ready"
+
+processors:
+  batch:
+
+# ADDED: RED metrics (rate, errors, duration) derived from the spans passing
+# through, written into the metrics pipeline as if the app had emitted them.
+# This is why the Ruby app ships no metrics code: the OTel metrics SDK is
+# still pre-1.0 and breaks between minor versions, so the spans are the only
+# thing the app produces and the rate/error/duration series are computed here.
+connectors:
+  spanmetrics:
+    # Emitted as traces_span_metrics_calls_total and
+    # traces_span_metrics_duration_milliseconds_* in Prometheus. Tempo's own
+    # metrics-generator (enabled in the image) already writes an overlapping
+    # traces_spanmetrics_* set from the same spans; the namespace keeps the
+    # two apart, and this set is the one carrying the dimensions below.
+    namespace: traces.span.metrics
+    # The attributes App#call puts on every server span (see
+    # ruby/app/request_tracing.rb), which is what makes these series worth
+    # having over Tempo's fixed service/operation/status_code set: route is
+    # already collapsed to a template there (`GET /api/v1/notes/:id`), so it
+    # stays a bounded label rather than one series per record id.
+    dimensions:
+      - name: http.method
+      - name: http.route
+      - name: http.status_code
+      - name: deployment.environment
+    # Links a metric data point back to a trace that produced it, which is
+    # what turns a spike in the duration histogram into a click through to the
+    # span that caused it. Prometheus runs with exemplar storage on and
+    # Grafana's Prometheus datasource is wired to Tempo, so both ends exist.
+    exemplars:
+      enabled: true
+
+exporters:
+  otlp_http/metrics:
+    endpoint: http://127.0.0.1:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp_http/traces:
+    endpoint: http://127.0.0.1:4418
+    tls:
+      insecure: true
+  otlp_http/logs:
+    endpoint: http://127.0.0.1:3100/otlp
+    tls:
+      insecure: true
+  otlp_grpc/profiles:
+    endpoint: http://127.0.0.1:4040
+    tls:
+      insecure: true
+  debug/metrics:
+    verbosity: detailed
+  debug/traces:
+    verbosity: detailed
+  debug/logs:
+    verbosity: detailed
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      # Spans fan out twice: once to Tempo to be stored, once into the
+      # spanmetrics connector, which feeds the metrics pipeline below.
+      exporters: [otlp_http/traces, spanmetrics]
+    metrics:
+      receivers: [otlp, prometheus/collector, spanmetrics]
+      processors: [batch]
+      exporters: [otlp_http/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/logs]
+    profiles:
+      receivers: [otlp]
+      exporters: [otlp_grpc/profiles]

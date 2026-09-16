@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Checks whether the local dev stack (Postgres, Redis, the Ruby API, a
-# Resque worker, and the Vite/Vue client) is up and reachable.
+# Resque worker, the Vite/Vue client, and the observability backend) is up and
+# reachable.
 #
 # Connection details for Postgres/Redis are read from ruby/.env.development
 # (the same source of truth used by `rake db:init` and the Postgres init
-# script), so this stays correct if those ever change. The API and Vite URLs
-# aren't stored in any .env file — override them with API_URL / VITE_URL if
-# you've bound them somewhere other than the README's documented defaults.
+# script), so this stays correct if those ever change. The API, Vite, and
+# Grafana URLs aren't stored in any .env file — override them with API_URL /
+# VITE_URL / GRAFANA_URL if you've bound them somewhere other than the
+# README's documented defaults.
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,6 +16,11 @@ ENV_FILE="$ROOT_DIR/ruby/.env.development"
 
 API_URL="${API_URL:-http://localhost:9292}"
 VITE_URL="${VITE_URL:-http://localhost:5173}"
+GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
+# Where compose publishes the collector's two OTLP ports. Only the host is
+# worth overriding: 4317/4318 are the protocol's own ports, not this stack's
+# choice, and the Ruby exporter defaults to them too.
+OTEL_HOST="${OTEL_HOST:-localhost}"
 
 pass=0
 fail=0
@@ -26,6 +33,14 @@ ok() {
 bad() {
   printf '  \033[31m✗\033[0m %s\n' "$1"
   fail=$((fail + 1))
+}
+
+# Something worth saying that is neither a pass nor a failure — used for the
+# optional pieces below, which are absent by choice rather than broken.
+# Deliberately counts toward neither total, so the summary line stays a
+# straight answer about the things that do have to be up.
+note() {
+  printf '  \033[90m·\033[0m %s\n' "$1"
 }
 
 env_value() {
@@ -133,6 +148,35 @@ elif curl -fsS -o /dev/null "$VITE_URL" 2>/dev/null; then
   ok "responding at $VITE_URL"
 else
   bad "not responding at $VITE_URL"
+fi
+
+echo "Observability"
+# The backend sits behind an opt-in compose profile, so a stopped one is a
+# fact about this machine right now rather than a broken stack: it reports and
+# leaves the exit status alone. Once the collector is accepting OTLP, though,
+# the rest of the container is expected to be up with it, and anything missing
+# there is a real failure.
+if tcp_open "$OTEL_HOST" 4318; then
+  ok "collector accepting OTLP/HTTP at $OTEL_HOST:4318"
+
+  if tcp_open "$OTEL_HOST" 4317; then
+    ok "collector accepting OTLP/gRPC at $OTEL_HOST:4317"
+  else
+    bad "no OTLP/gRPC at $OTEL_HOST:4317 — the Ruby exporter sends there by default; check: docker compose logs otel"
+  fi
+
+  # Same two tiers as Postgres and Redis above: an answer from Grafana is the
+  # better signal, but a missing or broken curl only downgrades the message,
+  # it never turns an open port into a false failure.
+  if command -v curl >/dev/null 2>&1 && curl -fsS "$GRAFANA_URL/api/health" 2>/dev/null | grep -q '"database": *"ok"'; then
+    ok "Grafana healthy at $GRAFANA_URL"
+  elif tcp_open "$OTEL_HOST" 3000; then
+    ok "Grafana port open at $OTEL_HOST:3000"
+  else
+    bad "Grafana not reachable at $GRAFANA_URL — it starts a few seconds after the collector; check: docker compose logs otel"
+  fi
+else
+  note "not running — it's opt-in, and nothing else here needs it; start it with: docker compose --profile observability up -d"
 fi
 
 echo
