@@ -31,6 +31,18 @@ jobs:
         ports:
           - 5432:5432
 
+      # Needed by the redis connection specs; the database index comes from
+      # ruby/.env.test's REDIS_URL, so nothing to provision here.
+      redis:
+        image: redis:8-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

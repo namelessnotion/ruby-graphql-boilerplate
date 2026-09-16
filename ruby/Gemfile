@@ -3,6 +3,7 @@
 source 'http://rubygems.org'
 ruby '3.4.10'
 
+gem 'async-redis'
 gem 'dotenv'
 gem 'falcon'
 gem 'graphql'

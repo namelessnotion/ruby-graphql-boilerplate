@@ -171,6 +171,28 @@ docker compose exec redis redis-cli -n 0 get resque:test_counter
 (use `-n 1` instead if you're checking against the test environment's Redis
 database).
 
+## Redis in the request path
+
+Application code talks to Redis through `RedisConnection`
+(`ruby/lib/redis_connection.rb`), which wraps
+[async-redis](https://github.com/socketry/async-redis) rather than the
+blocking `redis` gem Resque uses. Falcon serves every request in a fiber on a
+single reactor per worker, so a blocking command would stall every other
+in-flight request; async-redis yields to the reactor instead and gives each
+fiber its own pooled connection.
+
+It reads the same `REDIS_URL` as Resque, including the database index, and
+connects lazily, so no sockets exist at boot for Falcon's workers to inherit
+when they fork.
+
+```ruby
+# Inside a request, a reactor is already running:
+RedisConnection.with { |redis| redis.call('GET', 'some:key') }
+```
+
+`with` also works from a rake task, `bin/console`, or a spec — it starts a
+reactor when there isn't one and blocks until the block returns.
+
 ## Doctor
 
 Once you've started the pieces above, check they're all actually up:
