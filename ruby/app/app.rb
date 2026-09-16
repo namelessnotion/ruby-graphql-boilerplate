@@ -61,7 +61,16 @@ class App
 
   sig { returns(RackResponse) }
   def preflight
-    [204, { 'access-control-allow-methods' => 'POST, OPTIONS', 'access-control-allow-headers' => 'Content-Type' }, []]
+    # `traceparent` alongside Content-Type: the tracing link in the Vue
+    # client (vuejs/src/lib/apollo-client.ts) sends it on every operation, and
+    # a header a preflight doesn't list is one the browser refuses to send at
+    # all — dropping it here would silently break the parent/child link
+    # between the browser span and this request's server span.
+    headers = {
+      'access-control-allow-methods' => 'POST, OPTIONS',
+      'access-control-allow-headers' => 'Content-Type, traceparent'
+    }
+    [204, headers, []]
   end
 
   sig { returns(RackResponse) }
