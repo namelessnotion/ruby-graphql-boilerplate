@@ -19,6 +19,13 @@ shape, rule declaration, error display, and submit/reset behavior.
 Domain-modeling and general engineering-process judgment calls are covered by
 the `ddd` and `pragmatic` skills (invoked automatically when relevant).
 
+Adding a span, adding or changing a structured-log field, wiring a new metric
+dimension, or running the local OTLP backend runs through the `observability`
+skill: where a span belongs relative to the existing seams and the
+auto-instrumented gems, the shared JSON log field schema between `ruby/` and
+`vuejs/`, and why a metric is a span attribute plus a collector-config
+dimension rather than application code.
+
 ## Non-negotiable quality gates
 
 - Use test-driven development: write or update a failing test before implementing
