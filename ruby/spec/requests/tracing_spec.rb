@@ -64,6 +64,14 @@ RSpec.describe 'Request tracing', :aggregate_failures do
       expect(span.hex_trace_id).to eq(trace_id)
       expect(span.hex_parent_span_id).to eq(parent_span_id)
     end
+
+    it 'allows the browser to actually send the traceparent header, per the preflight response' do
+      options '/graphql'
+
+      expect(last_response.status).to eq(204)
+      allowed_headers = last_response.headers['access-control-allow-headers'].split(',').map(&:strip)
+      expect(allowed_headers).to include('Content-Type', 'traceparent')
+    end
   end
 
   describe 'a 500 the REST surface handled itself' do

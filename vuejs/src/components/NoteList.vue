@@ -2,6 +2,7 @@
 import { useMutation, useQuery } from '@vue/apollo-composable'
 import { ref } from 'vue'
 
+import { useNoteAction } from '@/composables/useNoteAction'
 import { graphql } from '@/gql'
 
 const NotesDocument = graphql(`
@@ -84,6 +85,10 @@ const { mutate: archiveNote } = useMutation(ArchiveNoteDocument, {
 
 const actionError = ref('')
 
+const { run: onComplete } = useNoteAction(completeNote, actionError)
+const { run: onWillnotdo } = useNoteAction(willnotdoNote, actionError)
+const { run: onArchive } = useNoteAction(archiveNote, actionError)
+
 function isOverdue(dueAt?: string | null): boolean {
   return !!dueAt && new Date(dueAt).getTime() < Date.now()
 }
@@ -96,36 +101,6 @@ function formatState(state?: string | null): string {
   if (!state) return ''
   if (state === 'willnotdo') return 'Will not do'
   return state.charAt(0).toUpperCase() + state.slice(1)
-}
-
-async function onComplete(id?: string) {
-  if (!id) return
-  actionError.value = ''
-  try {
-    await completeNote({ variables: { id } })
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Failed to update note.'
-  }
-}
-
-async function onWillnotdo(id?: string) {
-  if (!id) return
-  actionError.value = ''
-  try {
-    await willnotdoNote({ variables: { id } })
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Failed to update note.'
-  }
-}
-
-async function onArchive(id?: string) {
-  if (!id) return
-  actionError.value = ''
-  try {
-    await archiveNote({ variables: { id } })
-  } catch (e) {
-    actionError.value = e instanceof Error ? e.message : 'Failed to update note.'
-  }
 }
 </script>
 

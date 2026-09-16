@@ -1,16 +1,18 @@
-import { ApolloClient, InMemoryCache } from '@apollo/client'
+import { ApolloClient, ApolloLink, InMemoryCache } from '@apollo/client'
 import { MockLink } from '@apollo/client/testing'
 import { DefaultApolloClient } from '@vue/apollo-composable'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import { SaveNoteDocument } from '@/gql/graphql'
+import { errorLink } from '@/lib/apollo-client'
+import { Log } from '@/lib/observability'
 
 import NoteForm from '../NoteForm.vue'
 
 function mountWithMocks(mocks: ConstructorParameters<typeof MockLink>[0]) {
   const client = new ApolloClient({
-    link: new MockLink(mocks, { defaultOptions: { delay: 0 } }),
+    link: ApolloLink.from([errorLink, new MockLink(mocks, { defaultOptions: { delay: 0 } })]),
     cache: new InMemoryCache(),
   })
 
@@ -66,7 +68,9 @@ describe('NoteForm', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Note text is required.'))
   })
 
-  it('shows an error message when the mutation fails', async () => {
+  it('shows an error message when the mutation fails, and records it structurally', async () => {
+    const errorSpy = vi.spyOn(Log, 'error').mockImplementation(() => {})
+
     const wrapper = mountWithMocks([
       {
         request: { query: SaveNoteDocument, variables: { note: 'bad note' } },
@@ -78,6 +82,16 @@ describe('NoteForm', () => {
     await wrapper.get('form').trigger('submit')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('note is not present'))
+    expect(errorSpy).toHaveBeenCalledWith(
+      'graphql operation failed',
+      expect.objectContaining({
+        'graphql.operation.name': 'SaveNote',
+        'error.type': 'network',
+        'error.message': 'note is not present',
+      }),
+    )
+
+    errorSpy.mockRestore()
   })
 
   it('submits the note with a due date when provided', async () => {
