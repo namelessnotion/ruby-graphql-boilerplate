@@ -81,22 +81,41 @@ state_machine :state, initial: :pending do
 end
 ```
 
-Hard requirement: add `gem 'state_machines'` to the Gemfile if it isn't
-already there. `sequel-state-machine`'s own gemspec lists `state_machines`
-only as a development dependency — without an explicit direct dependency the
-plugin raises `NameError: uninitialized constant StateMachines::Error` at
-`require` time under `bundle exec`, not just a Sorbet gap. Run `bundle
-install` after adding it.
-
 If audit-logged and no `AuditLog`-shaped model exists yet for this resource,
 add one: `plugin :state_machine_audit_log`, `many_to_one :<resource>`.
 
-Sorbet: run `bin/tapioca dsl <ModelName>`. The repo's custom
-`sorbet/tapioca/compilers/sequel_model.rb` compiler and
-`sorbet/rbi/shims/state_machines.rbi` already type columns, `validates_*`,
-and state-machine/`timestamp_accessor` methods for any model generically —
-no new compiler work needed unless this resource introduces a Sequel plugin
-genuinely new to the repo.
+Firing an event does not save. `model.do_thing!` mutates the state attribute
+in memory only — reload the row and it is unchanged. `sequel-state-machine`
+persists through two methods instead:
+
+- `model.process(:do_thing)` — fires the event, saves, returns `true`/`false`.
+- `model.must_process(:do_thing)` — same, but returns the model on success and
+  raises `StateMachines::Sequel::FailedTransition` on an invalid transition.
+
+Services driving a transition want `must_process`; the raised error is what a
+resolver rescues. Note the raised class: it is **not**
+`StateMachines::InvalidTransition` (what the bare `state_machines` gem raises
+from `do_thing!`), so a spec asserting that class will pass against a
+non-persisting implementation and fail against a correct one.
+
+Sorbet: run `bin/tapioca dsl <ModelName>` after every migration — a new column
+is invisible to `srb tc` until the model's RBI is regenerated, and the error
+reads as a missing method (`Method 'due_at' does not exist on 'Note'`) rather
+than as a stale RBI.
+
+The repo's custom compilers in `sorbet/tapioca/compilers/` type columns,
+`validates_*`, state-machine/`timestamp_accessor`/`process`/`must_process`
+methods (`sequel_model.rb`) and GraphQL input-object argument readers
+(`graphql_input_object.rb`) for any model or input type generically.
+
+When `srb tc` reports a method that genuinely exists at runtime, that is a
+compiler gap, not a typing problem in your code: extend the relevant compiler
+and regenerate. Reaching for `T.unsafe`, a cast, or `# typed: ignore` to move
+past it violates `CLAUDE.md`'s quality gates. A gem method missing entirely
+usually means an empty gem RBI — check
+`sorbet/rbi/gems/<gem>@<version>.rbi` for the `THIS IS AN EMPTY RBI FILE`
+marker, add the gem to `sorbet/tapioca/require.rb` if it needs an explicit
+require, and run `bundle exec tapioca gem <gem>`.
 
 If the resource has a write operation more involved than a plain `create`
 (needed by either surface below), give it a service rather than putting the

@@ -19,4 +19,16 @@ RSpec.describe Services::SaveNote, :aggregate_failures do
       .to raise_error(Sequel::ValidationFailed)
       .and not_change(Note, :count)
   end
+
+  it 'persists a note with a due_at' do
+    due_at = Time.now + 3600
+    note = described_class.new(note: 'remember the milk', due_at:).call
+
+    expect(note.due_at).to be_within(1).of(due_at)
+  end
+
+  it 'raises when the due_at is in the past' do
+    expect { described_class.new(note: 'remember the milk', due_at: Time.now - 3600).call }
+      .to raise_error(Sequel::ValidationFailed)
+  end
 end

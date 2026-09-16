@@ -41,5 +41,6 @@ class Note < Sequel::Model
   def validate
     super
     validates_presence [:note]
+    validates_operator(:>, Time.now, :due_at, message: 'must be in the future') unless due_at.nil?
   end
 end

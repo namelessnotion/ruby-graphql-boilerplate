@@ -6,6 +6,16 @@ code and its tooling live in `vuejs/`.
 
 ## Design guidance
 
+Adding a persisted resource to `ruby/`, adding a GraphQL surface to an existing
+model, or adding a REST surface to an existing model runs through the
+`new-resource` skill. It carries the migration, Sequel model, state-machine,
+Sorbet/tapioca, and per-surface steps in order. Read it before hand-rolling any
+of them — most of what looks like a one-off addition is one of its branches.
+
+Form fields in `vuejs/` — adding one, building a new form component, or
+changing a validation rule — run through the `vue-form` skill: Regle state
+shape, rule declaration, error display, and submit/reset behavior.
+
 Domain-modeling and general engineering-process judgment calls are covered by
 the `ddd` and `pragmatic` skills (invoked automatically when relevant).
 

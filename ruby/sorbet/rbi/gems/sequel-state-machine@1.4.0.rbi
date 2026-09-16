@@ -5,5 +5,172 @@
 # Please instead update this file by running `bin/tapioca gem sequel-state-machine`.
 
 
-# THIS IS AN EMPTY RBI FILE.
-# see https://github.com/Shopify/tapioca#manually-requiring-parts-of-a-gem
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:8
+module Sequel; end
+
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:9
+module Sequel::Plugins; end
+
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:10
+module Sequel::Plugins::StateMachine
+  class << self
+    # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:13
+    def apply(_model, _opts = T.unsafe(nil)); end
+
+    # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:17
+    def configure(model, opts = T.unsafe(nil)); end
+  end
+end
+
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:236
+module Sequel::Plugins::StateMachine::ClassMethods
+  # Register the timestamp access for an event.
+  # A timestamp accessor reads when a certain transition happened
+  # by looking at the timestamp of the successful transition into that state.
+  #
+  # The event can be just the event name, or a hash of {event: <event method symbol>, from: <state name>},
+  # used when a single event can cause multiple transitions.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:249
+  def timestamp_accessor(event, accessor); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:237
+  def timestamp_accessors(events_and_accessors); end
+end
+
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:30
+module Sequel::Plugins::StateMachine::InstanceMethods
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:131
+  def audit(message, reason: T.unsafe(nil), machine: T.unsafe(nil)); end
+
+  # Return audit logs for the given state machine name.
+  # Only useful for multi-state-machine models.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:163
+  def audit_logs_for(machine); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:144
+  def audit_one_off(event, messages, reason: T.unsafe(nil), machine: T.unsafe(nil)); end
+
+  # Commit pending changes to the audit log.
+  # This involves either:
+  # - Updating the last audit log step, if it matches our current criteria (event, from state, to state),
+  # - or creating a new audit log entry.
+  # This ensures that we have the following behavior:
+  # - Failed transitions - ie where from and to state are the same - do not add multiple audit log steps.
+  #   Only the latest failed transition is recorded.
+  # - Successful transitions are always recorded. If we transition, a->b->c,
+  #   and then reset the state machine to 'a' and transition a->b->c again,
+  #   we'd end up with 5 transitions (a->b->c->a->b->c).
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:96
+  def commit_audit_log(transition); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:66
+  def current_audit_log(machine: T.unsafe(nil)); end
+
+  # Same as process, but raises an error if the transition fails.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:181
+  def must_process(event, *args); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:54
+  def new_audit_log; end
+
+  # Send event with arguments inside of a transaction, save the changes to the receiver,
+  # and return the transition result.
+  # Used to ensure the event processing happens in a transaction and the receiver is saved.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:171
+  def process(event, *args); end
+
+  # Same as must_process, but takes a lock,
+  # and calls the given block, only doing actual processing if the block returns true.
+  # If the block returns false, it acts as a success.
+  # Used to avoid issues concurrently processing the same object through the same state.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:191
+  def process_if(event, *args); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:50
+  def sequel_state_machine_status(machine = T.unsafe(nil)); end
+
+  # Return true if the given event can be transitioned into by the current state.
+  #
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:200
+  def valid_state_path_through?(event, machine: T.unsafe(nil)); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:215
+  def validates_state_machine(machine: T.unsafe(nil)); end
+
+  private
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:224
+  def find_state_machine(machine); end
+
+  # pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:31
+  def state_machine_status_column(machine = T.unsafe(nil)); end
+end
+
+# pkg:gem/sequel-state-machine#lib/sequel/plugins/state_machine.rb:11
+class Sequel::Plugins::StateMachine::InvalidConfiguration < ::RuntimeError; end
+
+# pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:5
+module StateMachines; end
+
+# pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:6
+module StateMachines::Sequel
+  class << self
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:49
+    def current_actor; end
+
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:41
+    def log(instance, level, message, params); end
+
+    # Proc called with [instance, level, message, params].
+    # By default, logs to `instance.logger` if it instance responds to :logger.
+    # If structured_logging is true, the message will be an 'event' without any dynamic info,
+    # if false, the params will be rendered into the message so are suitable for unstructured logging.
+    #
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:32
+    def log_callback; end
+
+    # Proc called with [instance, level, message, params].
+    # By default, logs to `instance.logger` if it instance responds to :logger.
+    # If structured_logging is true, the message will be an 'event' without any dynamic info,
+    # if false, the params will be rendered into the message so are suitable for unstructured logging.
+    #
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:32
+    def log_callback=(_arg0); end
+
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:34
+    def reset_logging; end
+
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:53
+    def set_current_actor(admin, &block); end
+
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:26
+    def structured_logging; end
+
+    # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:26
+    def structured_logging=(_arg0); end
+  end
+end
+
+# pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:7
+class StateMachines::Sequel::CurrentActorAlreadySet < ::StateMachines::Error; end
+
+# pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:9
+class StateMachines::Sequel::FailedTransition < ::StateMachines::Error
+  # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:12
+  def initialize(obj, event); end
+
+  # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:10
+  def audit_log; end
+
+  # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:10
+  def event; end
+
+  # pkg:gem/sequel-state-machine#lib/state_machines/sequel.rb:10
+  def object; end
+end

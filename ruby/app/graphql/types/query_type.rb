@@ -12,7 +12,8 @@ module Types
     field :ok, Boolean, null: false, resolver_method: :ok?,
                         description: 'Health check placeholder until real queries exist.'
 
-    field :notes, NoteType.connection_type, null: false, description: 'All notes.', max_page_size: 25
+    field :notes, NoteType.connection_type, null: false, description: 'All notes, excluding archived ones.',
+                                            max_page_size: 25
 
     sig { returns(T::Boolean) }
     def ok?
@@ -21,7 +22,7 @@ module Types
 
     sig { returns(Sequel::Dataset) }
     def notes
-      Note.dataset.order(:id)
+      Note.dataset.exclude(state: 'archived').order(:id)
     end
   end
 end

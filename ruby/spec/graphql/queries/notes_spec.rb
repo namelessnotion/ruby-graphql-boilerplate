@@ -27,4 +27,14 @@ RSpec.describe 'notes query', :aggregate_failures do
   it 'returns an empty list when there are no notes' do
     expect(execute.dig('data', 'notes', 'edges')).to eq([])
   end
+
+  it 'excludes archived notes' do
+    kept = Note.create(note: 'first note')
+    archived = Note.create(note: 'second note')
+    archived.must_process(:archive)
+
+    nodes = execute.dig('data', 'notes', 'edges').map { |edge| edge['node'] }
+
+    expect(nodes.map { |node| node['id'].to_i }).to contain_exactly(kept.id)
+  end
 end

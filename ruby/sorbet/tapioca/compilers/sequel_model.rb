@@ -106,6 +106,11 @@ module Tapioca
           if state_machine_plugin?
             klass.create_module('GeneratedStateMachineClassMethods') { |mod| add_state_machine_methods(mod) }
             klass.create_extend('GeneratedStateMachineClassMethods')
+
+            klass.create_module('GeneratedStateMachineInstanceMethods') do |mod|
+              add_state_machine_instance_methods(mod, model)
+            end
+            klass.create_include('GeneratedStateMachineInstanceMethods')
           end
 
           klass.create_module('GeneratedClassMethods') { |mod| add_class_methods(mod, model, dataset) }
@@ -177,6 +182,18 @@ module Tapioca
           'timestamp_accessor',
           parameters: [create_param('event', type: event_type), accessor_param]
         )
+      end
+
+      # `process`/`must_process` come from `Sequel::Plugins::StateMachine::InstanceMethods`
+      # — they fire an event and persist the resulting state in one call, unlike the bare
+      # event methods (`complete!`, ...) which only mutate the in-memory attribute.
+      sig { params(mod: RBI::Scope, model: String).void }
+      def add_state_machine_instance_methods(mod, model)
+        event_param = create_param('event', type: 'Symbol')
+        args_param = create_rest_param('args', type: 'T.untyped')
+
+        mod.create_method('process', parameters: [event_param, args_param], return_type: 'T::Boolean')
+        mod.create_method('must_process', parameters: [event_param, args_param], return_type: model)
       end
 
       sig { params(mod: RBI::Scope).void }

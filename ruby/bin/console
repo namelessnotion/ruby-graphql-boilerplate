@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 # typed: strict
 
+require_relative '../lib/boot'
 require_relative '../lib/environment'
 require 'irb'
 

@@ -38,12 +38,13 @@ describe('NoteForm', () => {
       },
     ])
 
-    const input = wrapper.get('input')
+    const input = wrapper.get('input[type="text"]')
     await input.setValue('remember the milk')
     await wrapper.get('form').trigger('submit')
 
     await vi.waitFor(() => expect((input.element as HTMLInputElement).value).toBe(''))
     expect(wrapper.text()).not.toContain('Failed')
+    expect(wrapper.text()).not.toContain('Note text is required.')
   })
 
   it('does not submit a blank note', () => {
@@ -53,15 +54,16 @@ describe('NoteForm', () => {
     expect(button.attributes('disabled')).toBeDefined()
   })
 
-  it('does not submit a whitespace-only note', async () => {
-    // No mocks registered: if onSubmit's trim-and-bail guard ever failed,
+  it('does not submit a whitespace-only note, and shows a validation error', async () => {
+    // No mocks registered: if onSubmit's validation guard ever failed,
     // MockLink would throw on the unexpected request and fail this test.
     const wrapper = mountWithMocks([])
 
-    await wrapper.get('input').setValue('   ')
+    await wrapper.get('input[type="text"]').setValue('   ')
     await wrapper.get('form').trigger('submit')
 
     expect(wrapper.text()).not.toContain('Failed')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Note text is required.'))
   })
 
   it('shows an error message when the mutation fails', async () => {
@@ -72,9 +74,74 @@ describe('NoteForm', () => {
       },
     ])
 
-    await wrapper.get('input').setValue('bad note')
+    await wrapper.get('input[type="text"]').setValue('bad note')
     await wrapper.get('form').trigger('submit')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('note is not present'))
+  })
+
+  it('submits the note with a due date when provided', async () => {
+    const dueAtLocal = '2099-06-01T10:00'
+    const dueAtIso = new Date(dueAtLocal).toISOString()
+
+    const wrapper = mountWithMocks([
+      {
+        request: {
+          query: SaveNoteDocument,
+          variables: { note: 'remember the milk', dueAt: dueAtIso },
+        },
+        result: {
+          data: {
+            saveNote: {
+              note: { id: '1', note: 'remember the milk', dueAt: dueAtIso, createdAt: '2026-01-01T00:00:00Z' },
+            },
+          },
+        },
+      },
+    ])
+
+    await wrapper.get('input[type="text"]').setValue('remember the milk')
+    await wrapper.get('input[type="datetime-local"]').setValue(dueAtLocal)
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect((wrapper.get('input[type="text"]').element as HTMLInputElement).value).toBe(''))
+    expect((wrapper.get('input[type="datetime-local"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.text()).not.toContain('Failed')
+    expect(wrapper.text()).not.toContain('Note text is required.')
+    expect(wrapper.text()).not.toContain('Due date must be in the future.')
+  })
+
+  it('submits the note without a due date when none is provided', async () => {
+    const wrapper = mountWithMocks([
+      {
+        request: { query: SaveNoteDocument, variables: { note: 'remember the milk' } },
+        result: {
+          data: {
+            saveNote: {
+              note: { id: '1', note: 'remember the milk', dueAt: null, createdAt: '2026-01-01T00:00:00Z' },
+            },
+          },
+        },
+      },
+    ])
+
+    await wrapper.get('input[type="text"]').setValue('remember the milk')
+    await wrapper.get('form').trigger('submit')
+
+    await vi.waitFor(() => expect((wrapper.get('input[type="text"]').element as HTMLInputElement).value).toBe(''))
+    expect(wrapper.text()).not.toContain('Failed')
+  })
+
+  it('does not submit and shows a validation error when the due date is in the past', async () => {
+    // No mocks registered: if onSubmit's validation guard ever failed,
+    // MockLink would throw on the unexpected request and fail this test.
+    const wrapper = mountWithMocks([])
+
+    await wrapper.get('input[type="text"]').setValue('remember the milk')
+    await wrapper.get('input[type="datetime-local"]').setValue('2020-01-01T10:00')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.text()).not.toContain('Failed')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Due date must be in the future.'))
   })
 })

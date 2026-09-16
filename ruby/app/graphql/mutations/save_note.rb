@@ -5,17 +5,18 @@ require_relative 'base_mutation'
 require_relative '../types/objects/note_type'
 
 module Mutations
-  # Persists a new Note via Services::SaveNote.
+  # Persists a new Note via Services::SaveNote
   class SaveNote < BaseMutation
     description 'Persists a new note.'
 
+    argument :due_at, GraphQL::Types::ISO8601DateTime, required: false, description: 'When the note is due.'
     argument :note, String, required: true, description: 'The note text to save.'
 
     field :note, Types::NoteType, null: false, description: 'The saved note.'
 
-    sig { params(note: String).returns(T::Hash[Symbol, Note]) }
-    def resolve(note:)
-      { note: Services::SaveNote.new(note:).call }
+    sig { params(note: String, due_at: T.nilable(Time)).returns(T::Hash[Symbol, Note]) }
+    def resolve(note:, due_at: nil)
+      { note: Services::SaveNote.new(note:, due_at:).call }
     rescue Sequel::ValidationFailed => e
       raise GraphQL::ExecutionError, e.message
     end

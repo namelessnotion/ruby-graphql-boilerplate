@@ -24,6 +24,25 @@ RSpec.describe Note, :aggregate_failures do
       expect(note).not_to be_valid
       expect(note.errors[:note]).to include('is not present')
     end
+
+    it 'is valid without a due_at' do
+      note = described_class.new(note: 'remember the milk', due_at: nil)
+
+      expect(note).to be_valid
+    end
+
+    it 'is valid with a due_at in the future' do
+      note = described_class.new(note: 'remember the milk', due_at: Time.now + 3600)
+
+      expect(note).to be_valid
+    end
+
+    it 'is invalid with a due_at in the past' do
+      note = described_class.new(note: 'remember the milk', due_at: Time.now - 3600)
+
+      expect(note).not_to be_valid
+      expect(note.errors[:due_at]).to include('must be in the future')
+    end
   end
 
   describe '#state' do

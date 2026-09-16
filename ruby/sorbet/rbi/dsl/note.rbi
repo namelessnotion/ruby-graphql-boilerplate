@@ -10,6 +10,7 @@ class Note
   include GeneratedAttributeMethods
   include GeneratedValidationMethods
   extend GeneratedStateMachineClassMethods
+  include GeneratedStateMachineInstanceMethods
   extend GeneratedClassMethods
   include StateMachineInstanceHelperModule
   extend StateMachineClassHelperModule
@@ -22,6 +23,12 @@ class Note
 
     sig { params(value: T.nilable(Time)).returns(T.nilable(Time)) }
     def created_at=(value); end
+
+    sig { returns(T.nilable(Time)) }
+    def due_at; end
+
+    sig { params(value: T.nilable(Time)).returns(T.nilable(Time)) }
+    def due_at=(value); end
 
     sig { returns(Integer) }
     def id; end
@@ -239,6 +246,14 @@ class Note
       ).returns(T.untyped)
     end
     def timestamp_accessors(events_and_accessors); end
+  end
+
+  module GeneratedStateMachineInstanceMethods
+    sig { params(event: Symbol, args: T.untyped).returns(::Note) }
+    def must_process(event, *args); end
+
+    sig { params(event: Symbol, args: T.untyped).returns(T::Boolean) }
+    def process(event, *args); end
   end
 
   module GeneratedValidationMethods
