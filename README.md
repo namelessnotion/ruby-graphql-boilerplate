@@ -323,6 +323,35 @@ survive a restart. To reclaim the space:
 docker compose --profile observability down -v
 ```
 
+### Querying it from an agent
+
+`.mcp.json` registers Grafana's own MCP server
+([mcp-grafana](https://github.com/grafana/mcp-grafana)) at project scope, so
+an agent can search traces, run PromQL and read dashboards directly rather
+than being told what they say. It needs two things on your machine:
+
+- **`uvx`** ([uv](https://github.com/astral-sh/uv)) on `PATH`, which is what
+  runs the server.
+- **`GRAFANA_MCP_KEY`**, a Grafana service account token. The backend creates
+  one on first start; read it out of the running container:
+
+  ```sh
+  docker compose exec otel cat /etc/lgtm/mcp.json
+  ```
+
+  Export it from your shell profile. It is deliberately *not* committed —
+  `.mcp.json` only names the variable — and it lives in Grafana's database
+  inside the `otel_data` volume, so the `down -v` above invalidates it and
+  the next start issues a new one.
+
+Two caveats worth knowing before you debug a silent server. A shell profile
+that exports it from `~/.zshrc` only reaches *interactive* shells, so an
+editor or desktop app launched from the GUI won't see it; `~/.zprofile` is
+the file that covers both. And Grafana here runs with anonymous admin access,
+so curling an endpoint with a bad token still returns 200 — `/api/user` is
+the one that actually rejects it, and is the honest way to check a token
+works.
+
 ## Memory footprint
 
 Four independent checks, each an isolated subprocess (so a reading reflects
