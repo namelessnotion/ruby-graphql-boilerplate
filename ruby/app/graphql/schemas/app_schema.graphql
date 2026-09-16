@@ -203,6 +203,16 @@ The root query type.
 """
 type Query {
   """
+  A single note by id, or null when none exists or it is archived.
+  """
+  note(
+    """
+    The note id.
+    """
+    id: ID!
+  ): Note
+
+  """
   All notes, excluding archived ones.
   """
   notes(

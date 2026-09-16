@@ -55,9 +55,32 @@ const ArchiveNoteDocument = graphql(`
 
 const { result, loading, error } = useQuery(NotesDocument)
 
-const { mutate: completeNote } = useMutation(CompleteNoteDocument, { refetchQueries: ['Notes'] })
-const { mutate: willnotdoNote } = useMutation(WillnotdoNoteDocument, { refetchQueries: ['Notes'] })
-const { mutate: archiveNote } = useMutation(ArchiveNoteDocument, { refetchQueries: ['Notes'] })
+// `completeNote` and `willnotdoNote` need no cache handling: both return the note's
+// id and state, so Apollo merges the new state into the normalized Note entity and
+// every query holding a reference to it re-renders.
+const { mutate: completeNote } = useMutation(CompleteNoteDocument)
+const { mutate: willnotdoNote } = useMutation(WillnotdoNoteDocument)
+
+// Archiving soft-deletes the note, so it drops out of the Notes query. Normalization
+// cannot infer that, so drop its edge from the cached list and evict the entity.
+const { mutate: archiveNote } = useMutation(ArchiveNoteDocument, {
+  update(cache, { data }) {
+    const archivedId = data?.archiveNote?.note.id
+    if (!archivedId) return
+
+    cache.updateQuery({ query: NotesDocument }, (cached) => {
+      if (!cached) return cached
+
+      const edges = cached.notes.edges?.filter((edge) => edge?.node?.id !== archivedId) ?? null
+
+      return { notes: { ...cached.notes, edges } }
+    })
+
+    const cacheId = cache.identify({ __typename: 'Note', id: archivedId })
+    if (cacheId) cache.evict({ id: cacheId })
+    cache.gc()
+  },
+})
 
 const actionError = ref('')
 

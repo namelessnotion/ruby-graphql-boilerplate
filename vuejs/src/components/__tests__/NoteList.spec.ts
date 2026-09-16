@@ -1,4 +1,4 @@
-import { ApolloClient, InMemoryCache } from '@apollo/client'
+import { ApolloClient, ApolloLink, InMemoryCache } from '@apollo/client'
 import { MockLink } from '@apollo/client/testing'
 import { DefaultApolloClient } from '@vue/apollo-composable'
 import { mount } from '@vue/test-utils'
@@ -8,9 +8,14 @@ import { ArchiveNoteDocument, CompleteNoteDocument, NotesDocument, WillnotdoNote
 
 import NoteList from '../NoteList.vue'
 
-function mountWithMocks(mocks: ConstructorParameters<typeof MockLink>[0]) {
+function mountWithMocks(mocks: ConstructorParameters<typeof MockLink>[0], operations: string[] = []) {
+  const recordOperations = new ApolloLink((operation, forward) => {
+    operations.push(operation.operationName ?? 'anonymous')
+    return forward(operation)
+  })
+
   const client = new ApolloClient({
-    link: new MockLink(mocks, { defaultOptions: { delay: 0 } }),
+    link: ApolloLink.from([recordOperations, new MockLink(mocks, { defaultOptions: { delay: 0 } })]),
     cache: new InMemoryCache(),
   })
 
@@ -23,8 +28,26 @@ function mountWithMocks(mocks: ConstructorParameters<typeof MockLink>[0]) {
   })
 }
 
+// Mocked responses have to look like the server's: every field the document selects,
+// plus __typename. A missing field makes Apollo serve the raw network response instead
+// of the cached one, and a missing __typename stops the note being normalized, so a
+// mutation writing the same note cannot update the list.
 function notesResult(nodes: Array<Record<string, unknown>>) {
-  return { data: { notes: { edges: nodes.map((node) => ({ node })) } } }
+  return {
+    data: {
+      notes: {
+        __typename: 'NoteConnection',
+        edges: nodes.map((node) => ({
+          __typename: 'NoteEdge',
+          node: { __typename: 'Note', dueAt: null, ...node },
+        })),
+      },
+    },
+  }
+}
+
+function notePayload(typename: string, field: string, note: Record<string, unknown>) {
+  return { data: { [field]: { __typename: typename, note: { __typename: 'Note', ...note } } } }
 }
 
 describe('NoteList', () => {
@@ -214,61 +237,88 @@ describe('NoteList', () => {
     expect(buttonLabels).toContain('Archive')
   })
 
-  it('completes a pending note when Complete is clicked', async () => {
-    const wrapper = mountWithMocks([
-      {
-        request: { query: NotesDocument },
-        result: notesResult([
-          { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
-        ]),
-      },
-      {
-        request: { query: CompleteNoteDocument, variables: { id: '1' } },
-        result: { data: { completeNote: { note: { id: '1', state: 'completed' } } } },
-      },
-      {
-        request: { query: NotesDocument },
-        result: notesResult([
-          { id: '1', note: 'remember the milk', state: 'completed', createdAt: '2026-01-01T00:00:00Z' },
-        ]),
-      },
-    ])
+  it('completes a pending note when Complete is clicked, without refetching the list', async () => {
+    const operations: string[] = []
+    const wrapper = mountWithMocks(
+      [
+        {
+          request: { query: NotesDocument },
+          result: notesResult([
+            { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
+          ]),
+        },
+        {
+          request: { query: CompleteNoteDocument, variables: { id: '1' } },
+          result: notePayload('CompleteNotePayload', 'completeNote', { id: '1', state: 'completed' }),
+        },
+      ],
+      operations,
+    )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('remember the milk'))
     await wrapper.get('button[data-action="complete"]').trigger('click')
 
-    await vi.waitFor(() => expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Complete'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Status: Completed'))
+    expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Complete')
     expect(wrapper.text()).not.toContain('Failed')
+    expect(operations).toEqual(['Notes', 'CompleteNote'])
   })
 
-  it('marks a pending note as will-not-do when Will not do is clicked', async () => {
-    const wrapper = mountWithMocks([
-      {
-        request: { query: NotesDocument },
-        result: notesResult([
-          { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
-        ]),
-      },
-      {
-        request: { query: WillnotdoNoteDocument, variables: { id: '1' } },
-        result: { data: { willnotdoNote: { note: { id: '1', state: 'willnotdo' } } } },
-      },
-      {
-        request: { query: NotesDocument },
-        result: notesResult([
-          { id: '1', note: 'remember the milk', state: 'willnotdo', createdAt: '2026-01-01T00:00:00Z' },
-        ]),
-      },
-    ])
+  it('marks a pending note as will-not-do when Will not do is clicked, without refetching the list', async () => {
+    const operations: string[] = []
+    const wrapper = mountWithMocks(
+      [
+        {
+          request: { query: NotesDocument },
+          result: notesResult([
+            { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
+          ]),
+        },
+        {
+          request: { query: WillnotdoNoteDocument, variables: { id: '1' } },
+          result: notePayload('WillnotdoNotePayload', 'willnotdoNote', { id: '1', state: 'willnotdo' }),
+        },
+      ],
+      operations,
+    )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('remember the milk'))
     await wrapper.get('button[data-action="willnotdo"]').trigger('click')
 
-    await vi.waitFor(() => expect(wrapper.findAll('button').map((b) => b.text())).not.toContain('Will not do'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Status: Will not do'))
     expect(wrapper.text()).not.toContain('Failed')
+    expect(operations).toEqual(['Notes', 'WillnotdoNote'])
   })
 
-  it('archives a note when Archive is clicked, removing it from the list', async () => {
+  it('archives a note when Archive is clicked, removing it from the list without refetching', async () => {
+    const operations: string[] = []
+    const wrapper = mountWithMocks(
+      [
+        {
+          request: { query: NotesDocument },
+          result: notesResult([
+            { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
+            { id: '2', note: 'buy groceries', state: 'pending', createdAt: '2026-01-02T00:00:00Z' },
+          ]),
+        },
+        {
+          request: { query: ArchiveNoteDocument, variables: { id: '1' } },
+          result: notePayload('ArchiveNotePayload', 'archiveNote', { id: '1', state: 'archived' }),
+        },
+      ],
+      operations,
+    )
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('remember the milk'))
+    await wrapper.get('li button[data-action="archive"]').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).not.toContain('remember the milk'))
+    expect(wrapper.text()).toContain('buy groceries')
+    expect(wrapper.text()).not.toContain('Failed')
+    expect(operations).toEqual(['Notes', 'ArchiveNote'])
+  })
+
+  it('shows the empty state after archiving the only note', async () => {
     const wrapper = mountWithMocks([
       {
         request: { query: NotesDocument },
@@ -278,11 +328,7 @@ describe('NoteList', () => {
       },
       {
         request: { query: ArchiveNoteDocument, variables: { id: '1' } },
-        result: { data: { archiveNote: { note: { id: '1', state: 'archived' } } } },
-      },
-      {
-        request: { query: NotesDocument },
-        result: notesResult([]),
+        result: notePayload('ArchiveNotePayload', 'archiveNote', { id: '1', state: 'archived' }),
       },
     ])
 
