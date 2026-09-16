@@ -203,11 +203,13 @@ Once you've started the pieces above, check they're all actually up:
 bin/doctor
 ```
 
-It checks Postgres, Redis, the Ruby API, a Resque worker, and the Vite/Vue
-client, reading connection details from `ruby/.env.development`. Override
-`API_URL` / `VITE_URL` if you've bound those somewhere other than this
-README's defaults (`http://localhost:9292` and `http://localhost:5173`).
-Exits non-zero if anything's down.
+It checks Postgres, Redis, the Ruby API, a Resque worker, the Vite/Vue
+client, and the observability backend, reading connection details from
+`ruby/.env.development`. Override `API_URL` / `VITE_URL` / `GRAFANA_URL` if
+you've bound those somewhere other than this README's defaults
+(`http://localhost:9292`, `http://localhost:5173`, `http://localhost:3000`).
+Exits non-zero if anything's down — except the observability backend, which
+is opt-in and only ever reported on.
 
 ## Observability
 
@@ -224,9 +226,11 @@ trace it belongs to. `LOG_LEVEL` sets the threshold (`info` in development,
 OTLP. `OTEL_SDK_DISABLED` switches the tier off, leaving a no-op tracer:
 spans still open and close, they just record nothing and cost nothing, and
 neither the SDK nor the OTLP exporter is even loaded. It is set in both
-`ruby/.env.development` and `ruby/.env.test` for now, since no collector runs
-locally yet; the suite therefore needs nothing running, and specs that assert
-on spans install an in-memory exporter for their own duration.
+`ruby/.env.development` and `ruby/.env.test`: there's a collector to run
+locally now (below), but it's opt-in, and an SDK left on without one just
+retries exports that can never land. The suite therefore needs nothing
+running, and specs that assert on spans install an in-memory exporter for
+their own duration.
 
 Metrics are deliberately absent. The metrics and logs SDKs are both pre-1.0
 and break between minor versions, so RED metrics are left for the collector to
@@ -248,7 +252,76 @@ instrumentation gems for GraphQL, pg, Redis and Resque:
 
 To see it working without a collector, run the app with `OTEL_SDK_DISABLED=false`
 and `OTEL_TRACES_EXPORTER=none`, then add an in-memory exporter in
-`bin/console`.
+`bin/console`. To see it working against a real one, start the backend below.
+
+## Observability backend
+
+What receives the OTLP above: one container, `grafana/otel-lgtm`, bundling an
+OpenTelemetry Collector with Tempo (traces), Prometheus (metrics), Loki
+(logs) and Grafana. It's opt-in — nothing else in this stack needs it, and
+it's the heaviest thing here — so it sits behind a compose profile and a
+plain `docker compose up -d` never starts it.
+
+The app speaks OTLP, a wire protocol rather than a vendor SDK, so this whole
+service is swappable for a hosted backend later without touching application
+code.
+
+1. Start it:
+
+   ```sh
+   docker compose --profile observability up -d
+   ```
+
+   Give it about 30 seconds — five processes start inside the container.
+   Verify it's up: `docker compose ps otel` should show `healthy`, and
+   http://localhost:3000 should open Grafana (no login; the image runs it
+   with anonymous admin access).
+
+2. Run the API with the trace SDK switched on, which
+   `ruby/.env.development` leaves off by default:
+
+   ```sh
+   cd ruby
+   OTEL_SDK_DISABLED=false CORS_ALLOWED_ORIGIN=http://localhost:5173 bundle exec bin/server
+   ```
+
+   Verify spans are landing: make a request (`curl http://localhost:9292/healthz`),
+   then in Grafana open **Explore → Tempo → Search** and search for service
+   name `stack-api`. A `GET /healthz` trace shows up within a few seconds.
+
+3. Confirm the whole stack at once:
+
+   ```sh
+   bin/doctor
+   ```
+
+   Its `Observability` section checks both OTLP ports and Grafana. With the
+   profile stopped it says so and leaves the exit status alone, since none of
+   this is required.
+
+The collector's config is `docker/otel/otelcol-config.yaml`, mounted over the
+one the image ships with — the same arrangement as
+`docker/postgres/init-databases.sh`, and for the same reason: container
+configuration this app owns belongs in the repo, committed and diffable. It
+is the stock pipeline plus two things:
+
+- **CORS for `http://localhost:5173`** on the OTLP/HTTP receiver, so the Vue
+  client can export straight to the collector from the browser. Nothing sends
+  from the browser yet; the entry is what will let it.
+- **The `spanmetrics` connector**, deriving rate/error/duration metrics from
+  the spans as they pass through. This is why the Ruby app ships no metrics
+  code at all (see above): the series are computed here instead, from the one
+  signal the app does emit. They land in Prometheus as
+  `traces_span_metrics_calls_total` and
+  `traces_span_metrics_duration_milliseconds_*`, labelled with the route
+  template, method and status code off each span.
+
+Everything the backend stores lives in the `otel_data` volume, so traces
+survive a restart. To reclaim the space:
+
+```sh
+docker compose --profile observability down -v
+```
 
 ## Memory footprint
 
