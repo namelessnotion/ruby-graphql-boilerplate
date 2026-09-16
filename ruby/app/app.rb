@@ -4,16 +4,15 @@
 require 'json'
 require 'rack'
 require_relative '../lib/environment'
+require_relative 'request_tracing'
 
 # `POST /graphql`, a `GET /healthz` liveness check, and the `/api` REST
 # routes (see Api::App), all served through the same Rack app and Falcon
 # process.
 class App
   extend T::Sig
-
-  # A Rack response triplet: HTTP status, header name/value pairs, and the
-  # response body as an array of chunks.
-  RackResponse = T.type_alias { [Integer, T::Hash[String, String], T::Array[String]] }
+  # Brings in the server span around every request, and with it RackResponse.
+  include RequestTracing
 
   API_MAP = T.let(Rack::URLMap.new('/api' => Api::App), Rack::URLMap)
 
@@ -25,8 +24,9 @@ class App
     # with JSON rather than a bare 500 from the web server. CORS headers are
     # still merged in below so the browser can actually read the body.
     status, headers, body = begin
-      route(request)
-    rescue StandardError
+      trace_request(request) { route(request) }
+    rescue StandardError => e
+      log_unhandled(request, e)
       internal_server_error
     end
 

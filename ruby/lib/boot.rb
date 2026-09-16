@@ -10,6 +10,18 @@ require 'sequel'
 require 'graphql'
 require_relative 'core_ext/sorbet_sig'
 
+# The instrumentation gems patch client classes, so both the client and the
+# patch have to be in place before the app opens anything. Loading `pg`,
+# `redis` and `resque` here costs nothing on its own — none of them connect on
+# require — and it is what lets `Observability.configure!` below find them to
+# patch. Every connection this file goes on to create is therefore traced.
+require 'pg'
+require 'redis'
+require 'resque'
+
+require_relative 'observability'
+Observability.configure!
+
 # for Falcon
 Sequel.extension :fiber_concurrency
 
@@ -19,8 +31,6 @@ Sequel::Model.plugin :timestamps, update_on_create: true
 DATABASE_URL = ENV.fetch('DATABASE_URL')
 
 DB = Sequel.connect(DATABASE_URL)
-
-require 'resque'
 
 REDIS_URL = ENV.fetch('REDIS_URL')
 
