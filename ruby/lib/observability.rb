@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 # typed: strict
 
+require 'fileutils'
 require 'json'
 require 'logger'
 require 'time'
@@ -266,16 +267,32 @@ module Observability
 
       sig { returns(::Logger) }
       def build_logger
+        device = log_device
+
         # Unbuffered: under Falcon and under `docker compose logs`, a buffered
         # stdout holds lines back until the buffer fills, which is exactly when
         # they are least useful.
-        $stdout.sync = true
+        device.sync = true
 
         ::Logger.new(
-          $stdout,
+          device,
           level: ENV.fetch('LOG_LEVEL', 'info'),
           formatter: Formatter.new
         )
+      end
+
+      # $stdout unless LOG_FILE is set, so nothing changes for a process that
+      # never sets it. The app runs on the host via `bin/server`, not in a
+      # container, so there is no container stdout for the collector's
+      # `filelog` receiver to scrape — a file is the seam (see
+      # docker/otel/otelcol-config.yaml).
+      sig { returns(IO) }
+      def log_device
+        path = ENV.fetch('LOG_FILE', nil)
+        return $stdout if path.nil? || path.empty?
+
+        FileUtils.mkdir_p(File.dirname(path))
+        File.open(path, 'a')
       end
     end
   end

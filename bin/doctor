@@ -5,10 +5,10 @@
 #
 # Connection details for Postgres/Redis are read from ruby/.env.development
 # (the same source of truth used by `rake db:init` and the Postgres init
-# script), so this stays correct if those ever change. The API, Vite, and
-# Grafana URLs aren't stored in any .env file — override them with API_URL /
-# VITE_URL / GRAFANA_URL if you've bound them somewhere other than the
-# README's documented defaults.
+# script), so this stays correct if those ever change. The API, Vite,
+# Grafana, and Loki URLs aren't stored in any .env file — override them with
+# API_URL / VITE_URL / GRAFANA_URL / LOKI_URL if you've bound them somewhere
+# other than the README's documented defaults.
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,6 +17,7 @@ ENV_FILE="$ROOT_DIR/ruby/.env.development"
 API_URL="${API_URL:-http://localhost:9292}"
 VITE_URL="${VITE_URL:-http://localhost:5173}"
 GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
+LOKI_URL="${LOKI_URL:-http://localhost:3100}"
 # Where compose publishes the collector's two OTLP ports. Only the host is
 # worth overriding: 4317/4318 are the protocol's own ports, not this stack's
 # choice, and the Ruby exporter defaults to them too.
@@ -174,6 +175,27 @@ if tcp_open "$OTEL_HOST" 4318; then
     ok "Grafana port open at $OTEL_HOST:3000"
   else
     bad "Grafana not reachable at $GRAFANA_URL — it starts a few seconds after the collector; check: docker compose logs otel"
+  fi
+
+  # A separate question from "is the backend up": the collector can be
+  # healthy with an empty Loki behind it, which is exactly the state this
+  # check exists to catch — see docker/otel/otelcol-config.yaml's filelog
+  # receiver and Observability::Log's LOG_FILE.
+  if ! command -v curl >/dev/null 2>&1; then
+    bad "curl not available to check whether logs have landed in Loki"
+  else
+    loki_labels="$(curl -fsS "$LOKI_URL/loki/api/v1/labels" 2>/dev/null)"
+    case "$loki_labels" in
+      *'"data":[]'* | '')
+        bad "Loki has no log labels yet — run the app with LOG_FILE set so its logs reach the collector; see the Observability backend section of README.md"
+        ;;
+      *'"data":['*)
+        ok "Loki has log data ($LOKI_URL)"
+        ;;
+      *)
+        bad "couldn't query Loki labels at $LOKI_URL/loki/api/v1/labels"
+        ;;
+    esac
   fi
 else
   note "not running — it's opt-in, and nothing else here needs it; start it with: docker compose --profile observability up -d"

@@ -2,6 +2,7 @@
 # typed: false
 
 require 'stringio'
+require 'tmpdir'
 
 RSpec.describe Observability::Log, :aggregate_failures do
   # The real logger writes to $stdout, which it captures when it is built.
@@ -73,6 +74,37 @@ RSpec.describe Observability::Log, :aggregate_failures do
 
     it 'takes its level from LOG_LEVEL' do
       expect(described_class.logger.level).to eq(Logger::FATAL)
+    end
+  end
+
+  describe '.logger', 'device selection' do
+    def with_log_file(value)
+      previous = ENV.fetch('LOG_FILE', nil)
+      ENV['LOG_FILE'] = value
+      yield
+    ensure
+      ENV['LOG_FILE'] = previous
+    end
+
+    it 'writes to stdout when LOG_FILE is unset' do
+      with_log_file(nil) do
+        device = described_class.send(:build_logger).instance_variable_get(:@logdev).dev
+        expect(device).to eq($stdout)
+      end
+    end
+
+    it 'writes to LOG_FILE when set, creating its directory' do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, 'nested', 'development.log')
+
+        with_log_file(path) do
+          # .fatal, not .info: LOG_LEVEL is 'fatal' throughout the test env
+          # (see .env.test), and build_logger reads it like the real logger does.
+          described_class.send(:build_logger).fatal('note saved')
+        end
+
+        expect(File.read(path)).to include('note saved')
+      end
     end
   end
 

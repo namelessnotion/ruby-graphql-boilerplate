@@ -5,7 +5,7 @@
 #
 # This is the image's stock pipeline — OTLP in on 4317/4318, out to the Tempo,
 # Prometheus and Loki running beside the collector in the same container —
-# with two additions the stock config doesn't cover, each marked below.
+# with three additions the stock config doesn't cover, each marked below.
 
 receivers:
   otlp:
@@ -34,6 +34,47 @@ receivers:
           scrape_interval: 1s
           static_configs:
             - targets: ["127.0.0.1:8888"]
+  # ADDED: tails the Ruby app's structured JSON log file — LOG_FILE in
+  # ruby/lib/observability.rb, mounted read-only below the same way
+  # otelcol-config.yaml itself is mounted (see compose.yml). The app runs on
+  # the host, not in this container, so there is no container stdout to
+  # scrape instead.
+  filelog:
+    include:
+      - /var/log/stack-api/*.log
+    start_at: beginning
+    # Set here rather than read off each line's `service.name` attribute:
+    # this receiver only ever tails the Ruby API's own log file, and setting
+    # it as a resource attribute (not a log attribute) is what makes Loki's
+    # OTLP ingestion label the stream `service_name="stack-api"` instead of
+    # `unknown_service` — the label bin/doctor and the README's Explore query
+    # both filter on.
+    resource:
+      service.name: stack-api
+    operators:
+      # One JSON object per line (Observability::Log::Formatter). Parses the
+      # line into attributes, then lifts `timestamp` and `level` off those
+      # attributes into the record's real timestamp and severity.
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+          location: UTC
+        severity:
+          parse_from: attributes.level
+      # Promotes trace_id/span_id onto the record's real trace context rather
+      # than leaving them as ordinary attributes — this is what lets Grafana's
+      # Loki `derivedFields` (matching a trace_id *label*) and Tempo's
+      # `tracesToLogsV2` join a log line to the trace it belongs to. Guarded:
+      # both fields are absent (not zeroed) on a line written outside a span
+      # (see Formatter#correlation), and running this operator against a
+      # missing field is itself an error.
+      - type: trace_parser
+        if: attributes.trace_id != nil && attributes.span_id != nil
+        trace_id:
+          parse_from: attributes.trace_id
+        span_id:
+          parse_from: attributes.span_id
 
 extensions:
   health_check:
@@ -111,7 +152,9 @@ service:
       processors: [batch]
       exporters: [otlp_http/metrics]
     logs:
-      receivers: [otlp]
+      # otlp stays for the browser-side logs a later issue adds; filelog is
+      # the Ruby app's own structured logs (see the receiver above).
+      receivers: [otlp, filelog]
       processors: [batch]
       exporters: [otlp_http/logs]
     profiles:

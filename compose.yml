@@ -48,11 +48,17 @@ services:
     image: grafana/otel-lgtm:0.33.0@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a
     ports:
       - "3000:3000" # Grafana
+      - "3100:3100" # Loki — queried directly by bin/doctor and by hand
       - "4317:4317" # OTLP/gRPC — where the Ruby exporter sends by default
       - "4318:4318" # OTLP/HTTP — the only one a browser can reach
     volumes:
       - otel_data:/data
       - ./docker/otel/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      # Read-only tail source for the filelog receiver (see
+      # docker/otel/otelcol-config.yaml): the app runs on the host via
+      # `bin/server`, not in a container, so LOG_FILE writing here is the seam
+      # that gets its structured logs into Loki.
+      - ./ruby/log:/var/log/stack-api:ro
     # No healthcheck here: the image ships one that checks all five processes
     # inside it, which is more than anything written at this level could.
 

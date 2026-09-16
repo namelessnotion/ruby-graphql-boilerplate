@@ -205,11 +205,12 @@ bin/doctor
 
 It checks Postgres, Redis, the Ruby API, a Resque worker, the Vite/Vue
 client, and the observability backend, reading connection details from
-`ruby/.env.development`. Override `API_URL` / `VITE_URL` / `GRAFANA_URL` if
-you've bound those somewhere other than this README's defaults
-(`http://localhost:9292`, `http://localhost:5173`, `http://localhost:3000`).
-Exits non-zero if anything's down — except the observability backend, which
-is opt-in and only ever reported on.
+`ruby/.env.development`. Override `API_URL` / `VITE_URL` / `GRAFANA_URL` /
+`LOKI_URL` if you've bound those somewhere other than this README's defaults
+(`http://localhost:9292`, `http://localhost:5173`, `http://localhost:3000`,
+`http://localhost:3100`). Exits non-zero if anything's down — except the
+observability backend when its profile isn't running at all, which is opt-in
+and only reported on in that case.
 
 ## Observability
 
@@ -220,7 +221,10 @@ tiers, because the OpenTelemetry signals are not equally mature.
 per line to stdout, each carrying the `trace_id` and `span_id` of the span in
 scope when it was written — which is what lets a log line be read next to the
 trace it belongs to. `LOG_LEVEL` sets the threshold (`info` in development,
-`fatal` in the test env so a run stays quiet).
+`fatal` in the test env so a run stays quiet). Set `LOG_FILE` (e.g.
+`LOG_FILE=log/development.log`) to write there instead of stdout — the seam
+the observability backend's collector tails to get these lines into Loki; see
+below.
 
 **Traces** come from the stable OpenTelemetry trace SDK (1.x) and export over
 OTLP. `OTEL_SDK_DISABLED` switches the tier off, leaving a no-op tracer:
@@ -277,17 +281,40 @@ code.
    http://localhost:3000 should open Grafana (no login; the image runs it
    with anonymous admin access).
 
-2. Run the API with the trace SDK switched on, which
-   `ruby/.env.development` leaves off by default:
+2. Run the API with the trace SDK switched on and its logs going to a file
+   the collector can tail, both of which `ruby/.env.development` leaves off
+   by default:
 
    ```sh
    cd ruby
-   OTEL_SDK_DISABLED=false CORS_ALLOWED_ORIGIN=http://localhost:5173 bundle exec bin/server
+   OTEL_SDK_DISABLED=false LOG_FILE=log/development.log CORS_ALLOWED_ORIGIN=http://localhost:5173 bundle exec bin/server
    ```
 
    Verify spans are landing: make a request (`curl http://localhost:9292/healthz`),
    then in Grafana open **Explore → Tempo → Search** and search for service
    name `stack-api`. A `GET /healthz` trace shows up within a few seconds.
+
+   Verify a log line is landing, and that it's linked to a trace: today
+   `Observability::Log` is only called from the unhandled-exception paths
+   (see `RequestTracing#log_unhandled`), so `bin/console` is the easiest way
+   to produce one on demand, the same way the app-side Observability section
+   above uses it to demonstrate a span:
+
+   ```sh
+   cd ruby
+   LOG_FILE=log/development.log OTEL_SDK_DISABLED=false bundle exec bin/console
+   ```
+
+   ```
+   irb(main):001> Observability.in_span('manual.test') { Observability::Log.info('note saved') }
+   ```
+
+   In Grafana, open **Explore → Loki**, run `{service_name="stack-api"}`, and
+   find the `note saved` line. Clicking its `trace_id` opens the matching
+   `manual.test` trace in Tempo, and that trace's span has a **Logs for this
+   span** button that finds its way back — the correlation
+   `Observability::Log::Formatter` and the collector's `filelog` receiver
+   exist to make true.
 
 3. Confirm the whole stack at once:
 
@@ -295,15 +322,17 @@ code.
    bin/doctor
    ```
 
-   Its `Observability` section checks both OTLP ports and Grafana. With the
-   profile stopped it says so and leaves the exit status alone, since none of
-   this is required.
+   Its `Observability` section checks both OTLP ports, Grafana, and whether
+   any logs have actually reached Loki — a collector that's up and a Loki
+   with your logs in it are different questions, and `bin/doctor` answers
+   both. With the profile stopped it says so and leaves the exit status
+   alone, since none of this is required.
 
 The collector's config is `docker/otel/otelcol-config.yaml`, mounted over the
 one the image ships with — the same arrangement as
 `docker/postgres/init-databases.sh`, and for the same reason: container
 configuration this app owns belongs in the repo, committed and diffable. It
-is the stock pipeline plus two things:
+is the stock pipeline plus three things:
 
 - **CORS for `http://localhost:5173`** on the OTLP/HTTP receiver, so the Vue
   client can export straight to the collector from the browser. Nothing sends
@@ -315,6 +344,14 @@ is the stock pipeline plus two things:
   `traces_span_metrics_calls_total` and
   `traces_span_metrics_duration_milliseconds_*`, labelled with the route
   template, method and status code off each span.
+- **A `filelog` receiver** that tails `LOG_FILE` (mounted read-only from
+  `ruby/log/` — the app runs on the host, not in this container, so there is
+  no container stdout to scrape instead), parses each JSON line, and promotes
+  its `trace_id`/`span_id` onto the log record's real trace context rather
+  than leaving them as ordinary attributes. That promotion is what Grafana's
+  Loki `derivedFields` and Tempo's `tracesToLogsV2` actually match on — a
+  `trace_id` sitting in the body satisfies neither, so it's the step that
+  makes the trace-to-log link work rather than just delivering the lines.
 
 Everything the backend stores lives in the `otel_data` volume, so traces
 survive a restart. To reclaim the space:
