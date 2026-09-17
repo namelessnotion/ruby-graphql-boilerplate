@@ -35,16 +35,10 @@ services:
   # speaks OTLP — a wire protocol, not a vendor SDK — so this whole service is
   # swappable for a hosted backend later without touching application code.
   #
-  # Behind a profile, so the plain `docker compose up -d` everything else
-  # needs stays as fast and as small as it is today. Start it with:
-  #
-  #   docker compose --profile observability up -d
-  #
   # Pinned by digest as well as tag: the tag moves, and an observability
   # backend that quietly changes version underneath a stack is exactly the
   # thing that makes "my spans stopped showing up" hard to diagnose.
   otel:
-    profiles: [observability]
     image: grafana/otel-lgtm:0.33.0@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a
     ports:
       - "3000:3000" # Grafana

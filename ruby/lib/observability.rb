@@ -159,12 +159,20 @@ module Observability
       config.use 'OpenTelemetry::Instrumentation::GraphQL'
       config.use 'OpenTelemetry::Instrumentation::PG'
       config.use 'OpenTelemetry::Instrumentation::Redis'
-      # Resque ends a job's forked child with `exit!`, which skips the at_exit
-      # hook that would otherwise drain the batch processor. Stated explicitly
-      # rather than left to the default, because the failure it prevents —
-      # every worker span silently lost — looks like nothing at all.
-      # :ask_the_job flushes only when the worker actually forks.
-      config.use 'OpenTelemetry::Instrumentation::Resque', { force_flush: :ask_the_job }
+      config.use 'OpenTelemetry::Instrumentation::Resque', {
+        # Resque ends a job's forked child with `exit!`, which skips the
+        # at_exit hook that would otherwise drain the batch processor. Stated
+        # explicitly rather than left to the default, because the failure it
+        # prevents — every worker span silently lost — looks like nothing at
+        # all. :ask_the_job flushes only when the worker actually forks.
+        force_flush: :ask_the_job,
+        # Default span naming is "<queue> process", identical for every job
+        # on a queue. Naming by job class instead reads as
+        # "Jobs::IncrementCounterJob process" — distinct at a glance in a
+        # trace list from an HTTP request span's "GET /api/v1/notes/:id"
+        # (RequestTracing#trace_request), without adding an attribute.
+        span_naming: :job_class
+      }
     end
 
     # Deliberately not memoized. The tracer has to follow the global provider,

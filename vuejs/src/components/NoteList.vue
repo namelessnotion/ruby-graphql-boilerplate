@@ -83,11 +83,11 @@ const { mutate: archiveNote } = useMutation(ArchiveNoteDocument, {
   },
 })
 
-const actionError = ref('')
+const actionErrors = ref<Record<string, string>>({})
 
-const { run: onComplete } = useNoteAction(completeNote, actionError)
-const { run: onWillnotdo } = useNoteAction(willnotdoNote, actionError)
-const { run: onArchive } = useNoteAction(archiveNote, actionError)
+const { run: onComplete } = useNoteAction(completeNote, actionErrors)
+const { run: onWillnotdo } = useNoteAction(willnotdoNote, actionErrors)
+const { run: onArchive } = useNoteAction(archiveNote, actionErrors)
 
 function isOverdue(dueAt?: string | null): boolean {
   return !!dueAt && new Date(dueAt).getTime() < Date.now()
@@ -139,6 +139,12 @@ function formatState(state?: string | null): string {
         :class="{ 'bg-red-500/20': isOverdue(edge?.node?.dueAt) }"
       >
         <p>{{ edge?.node?.note }}</p>
+        <p
+          v-if="edge?.node?.id && actionErrors[edge.node.id]"
+          class="mt-1 text-sm text-red-600"
+        >
+          {{ actionErrors[edge.node.id] }}
+        </p>
         <p class="text-xs font-medium text-gray-600">
           Status: {{ formatState(edge?.node?.state) }}
         </p>
@@ -181,11 +187,5 @@ function formatState(state?: string | null): string {
         </div>
       </li>
     </ul>
-    <p
-      v-if="actionError"
-      class="mt-2 text-sm text-red-600"
-    >
-      {{ actionError }}
-    </p>
   </div>
 </template>

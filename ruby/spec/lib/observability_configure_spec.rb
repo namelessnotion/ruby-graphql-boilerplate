@@ -84,7 +84,9 @@ RSpec.describe Observability, :aggregate_failures do
               OpenTelemetry::Instrumentation.const_get(name)::Instrumentation.instance.installed?
             end,
             'force_flush' =>
-              OpenTelemetry::Instrumentation::Resque::Instrumentation.instance.config[:force_flush].to_s
+              OpenTelemetry::Instrumentation::Resque::Instrumentation.instance.config[:force_flush].to_s,
+            'span_naming' =>
+              OpenTelemetry::Instrumentation::Resque::Instrumentation.instance.config[:span_naming].to_s
           }
         PROBE
       end
@@ -97,6 +99,15 @@ RSpec.describe Observability, :aggregate_failures do
         # That child ends with `exit!`, which skips the at_exit hook that would
         # otherwise drain whatever the batch processor still holds.
         expect(booted['force_flush']).to eq('ask_the_job')
+      end
+
+      it 'names Resque spans after the job class, not the queue' do
+        # The gem's default span name is "<queue> process", identical for
+        # every job on a queue. HTTP request spans are already named
+        # "GET /api/v1/notes/:id" (RequestTracing#trace_request); naming
+        # Resque spans after the job class instead of the queue keeps the two
+        # visually distinct in a trace list without adding a span attribute.
+        expect(booted['span_naming']).to eq('job_class')
       end
     end
   end

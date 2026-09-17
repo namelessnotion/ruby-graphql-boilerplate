@@ -338,7 +338,7 @@ describe('NoteList', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('No notes yet.'))
   })
 
-  it('shows an error message when an action fails', async () => {
+  it('shows an error message below the note that failed', async () => {
     const wrapper = mountWithMocks([
       {
         request: { query: NotesDocument },
@@ -356,5 +356,41 @@ describe('NoteList', () => {
     await wrapper.get('button[data-action="complete"]').trigger('click')
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('note not found'))
+
+    const item = wrapper.get('li')
+    expect(item.text()).toContain('note not found')
+
+    const paragraphs = item.findAll('p').map((p) => p.text())
+    const noteIndex = paragraphs.indexOf('remember the milk')
+    const errorIndex = paragraphs.indexOf('note not found')
+    expect(errorIndex).toBeGreaterThan(noteIndex)
+  })
+
+  it('only shows the error below the note that failed, not other notes', async () => {
+    const wrapper = mountWithMocks([
+      {
+        request: { query: NotesDocument },
+        result: notesResult([
+          { id: '1', note: 'remember the milk', state: 'pending', createdAt: '2026-01-01T00:00:00Z' },
+          { id: '2', note: 'buy groceries', state: 'pending', createdAt: '2026-01-02T00:00:00Z' },
+        ]),
+      },
+      {
+        request: { query: CompleteNoteDocument, variables: { id: '1' } },
+        error: new Error('note not found'),
+      },
+    ])
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('remember the milk'))
+    await wrapper.get('button[data-action="complete"]').trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('note not found'))
+
+    const items = wrapper.findAll('li')
+    const failedItem = items.find((item) => item.text().includes('remember the milk'))
+    const otherItem = items.find((item) => item.text().includes('buy groceries'))
+
+    expect(failedItem?.text()).toContain('note not found')
+    expect(otherItem?.text()).not.toContain('note not found')
   })
 })
