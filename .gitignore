@@ -4,9 +4,6 @@ vuejs/dist/
 npm-debug.log*
 *.tsbuildinfo
 
-# Vite personal env overrides (vuejs/.env.development and .env.test are
-# intentionally committed defaults consumed by docker/postgres/init-databases.sh
-# and the app's own dotenv loading — do not ignore those).
 .env.local
 .env.*.local
 

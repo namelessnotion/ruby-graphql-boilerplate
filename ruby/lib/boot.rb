@@ -40,7 +40,3 @@ Resque.redis = REDIS_URL
 # blocking client above. Requiring it here only defines the module — no
 # connection is opened until the first command, which keeps boot fork-safe.
 require_relative 'redis_connection'
-
-# Generated protobuf/twirp code (e.g. `require 'holder/v1/holder_pb'`) lives
-# under gen/proto rather than lib, so it isn't on the load path by default.
-$LOAD_PATH.unshift(File.expand_path('../gen/proto', __dir__))
