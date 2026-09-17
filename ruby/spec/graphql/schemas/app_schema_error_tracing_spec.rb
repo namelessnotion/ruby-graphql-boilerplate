@@ -47,4 +47,26 @@ RSpec.describe AppSchema, :aggregate_failures do
         .not_to eq(OpenTelemetry::Trace::Status::ERROR)
     end
   end
+
+  describe '.resource_name' do
+    def error_for(dataset)
+      error = Sequel::NoMatchingRow.new
+      error.dataset = dataset
+      error
+    end
+
+    it 'derives the resource name from the dataset that raised the error, not a hardcoded string' do
+      expect(described_class.send(:resource_name, error_for(Note.dataset))).to eq('note')
+    end
+
+    it 'snake_cases a multi-word model name, so this generalizes past single-word resources' do
+      fake_model = stub_const('PurchaseOrder', Class.new)
+
+      expect(described_class.send(:resource_name, error_for(double(model: fake_model)))).to eq('purchase_order')
+    end
+
+    it 'falls back to a generic label when the dataset has no associated model' do
+      expect(described_class.send(:resource_name, error_for(double))).to eq('record')
+    end
+  end
 end

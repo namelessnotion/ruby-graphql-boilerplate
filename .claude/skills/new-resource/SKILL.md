@@ -38,10 +38,21 @@ default to persisted otherwise, and `state` falls back to a plain in-memory
 attribute that silently resets on every reload.
 
 If transitions should be audited, add a companion migration for an
-`<resource>_audit_logs`-shaped table: `<resource>_id` FK + index, `event`,
-`from_state`, `to_state`, `at` all `null: false`; `reason`, `messages`,
-`actor` nullable. `db/migrations/20260915190628_create_audit_logs.rb` is a
-worked example.
+`<resource>_audit_logs`-shaped table:
+
+```ruby
+create_table(:x_audit_logs) do
+  primary_key :id
+  foreign_key :x_id, :xs, null: false, index: true
+  String :event, null: false
+  String :from_state, null: false
+  String :to_state, null: false
+  DateTime :at, null: false
+  String :reason
+  String :messages
+  String :actor
+end
+```
 
 Run it: `APP_ENV=test bin/migrate up` (and `APP_ENV=development bin/migrate
 up` for local dev).
@@ -61,6 +72,15 @@ def validate
   super
   validates_presence [:some_column]
 end
+```
+
+For a nilable column, guard a `validation_helpers` comparison with `unless
+field.nil?` rather than reaching for a conditional option — there isn't one,
+and an unguarded comparison validator raises (`nil` has no `:>` method)
+instead of reporting the column invalid:
+
+```ruby
+validates_operator(:>, Time.now, :due_at, message: 'must be in the future') unless due_at.nil?
 ```
 
 State machine (only if Step 1 calls for one):
@@ -83,6 +103,18 @@ end
 
 If audit-logged and no `AuditLog`-shaped model exists yet for this resource,
 add one: `plugin :state_machine_audit_log`, `many_to_one :<resource>`.
+
+If a state should stamp a column when the model transitions into it (e.g. a
+`completed_at`), add the column in the same migration as the state machine
+and wire it with `timestamp_accessors`, outside the `state_machine` block:
+
+```ruby
+timestamp_accessors(
+  [
+    [{ to: 'completed' }, :completed_at]
+  ]
+)
+```
 
 Firing an event does not save. `model.do_thing!` mutates the state attribute
 in memory only — reload the row and it is unchanged. `sequel-state-machine`
@@ -117,11 +149,10 @@ usually means an empty gem RBI — check
 marker, add the gem to `sorbet/tapioca/require.rb` if it needs an explicit
 require, and run `bundle exec tapioca gem <gem>`.
 
-If the resource has a write operation more involved than a plain `create`
-(needed by either surface below), give it a service rather than putting the
-logic in a resolver or route action — `app/graphql/mutations/save_note.rb`
-and `app/api/v1/notes.rb` both call the same `Services::SaveNote`, one
-service serving both surfaces:
+Give every write a service rather than putting the logic in a resolver or
+route action, even a plain `create` — a GraphQL mutation and a REST route for
+the same write both call the same service (Step 4 and Step 5's examples both
+call into these), so the persistence logic is written once:
 
 ```ruby
 # app/services/verb_x.rb
@@ -143,7 +174,34 @@ module Services
 end
 ```
 
-`BaseService#perform` wraps the block in `DB.transaction(savepoint: true)`.
+`BaseService#perform` wraps the block in `Observability.in_span(self.class.name)`
+then `DB.transaction(savepoint: true)` — every write gets a span named for its
+service for free; don't add a second one inside `call`.
+
+A service driving a state-machine transition looks up the record and fires
+the event through `must_process` instead of building anything:
+
+```ruby
+sig { returns(X) }
+def call
+  perform { X.with_pk!(@id).must_process(:do_thing) }
+end
+```
+
+A service updating a subset of columns assigns only what was passed and
+saves once — nilable params double as "leave this column alone":
+
+```ruby
+sig { returns(X) }
+def call
+  perform do
+    record = X.with_pk!(@id)
+    record.some_column = @some_column unless @some_column.nil?
+    record.save_changes
+    record
+  end
+end
+```
 
 ## Step 4 — GraphQL surface?
 
